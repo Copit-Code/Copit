@@ -96,7 +96,7 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         {
             var e = _data.Project(p.Id);
             if (e == null) return;
-            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions;
+            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions; ProjectFolders.Move(data.Projects.Value, e, p.Group);
             await _data.Projects.SaveAsync();
             _data.RaiseProjectsChanged();
             Project = null; Project = e;
@@ -192,7 +192,7 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     [RelayCommand] private void OpenTerminal() { if (Project != null) Dialogs.OpenTerminal(Project.SourceFolder); }
     [RelayCommand]
     private Task OpenGitLabAsync() => Dialogs.OpenUrl(Project == null || _hub.GitLab == null || string.IsNullOrEmpty(Project.GitLabProject) ? null : $"{_hub.GitLab.BaseUrl}/{Project.GitLabProject}");
-    [RelayCommand] private void Edit() => Editor.Open(Project);
+    [RelayCommand] private void Edit() { Editor.KnownGroups = ProjectFolders.AllPaths(_data.Projects.Value); Editor.Open(Project); }
 
     [RelayCommand]
     private async Task DeleteProjectAsync()
@@ -214,9 +214,10 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     private async Task WorkOnIssueAsync(JiraIssue i)
     {
         if (Project == null) return;
-        var choice = await Dialogs.Choose($"{i.Key}: {i.Summary}", "Session starten", "Branch anlegen + Session starten", "In Jira öffnen");
+        var choice = await Dialogs.Choose($"{i.Key}: {i.Summary}", "Session starten", "Branch anlegen + Session starten", "Code-Änderungen ansehen", "In Jira öffnen");
         if (choice == null || choice == "Abbrechen") return;
         if (choice.StartsWith("In Jira")) { await Dialogs.OpenUrl(i.Url); return; }
+        if (choice.StartsWith("Code-Änderungen")) { _nav.Go(Routes.Changes, new Copit.Views.ChangesRequest(Project.Id, i.Key)); return; }
         var desc = string.IsNullOrWhiteSpace(i.Description) ? "" : $"\n\nBeschreibung aus Jira:\n{(i.Description.Length > 4000 ? i.Description[..4000] : i.Description)}";
         var prompt = $"Wir arbeiten jetzt an Ticket {i.Key}: \"{i.Summary}\".{desc}\n\nVerschaffe dir einen Überblick über den relevanten Code und schlage einen Umsetzungsplan vor. Stelle Rückfragen, falls Anforderungen unklar sind.";
         _nav.Go(Routes.Session, new SessionRequest(Project, prompt, $"{i.Key}: {i.Summary}", true, choice.StartsWith("Branch") ? i : null));

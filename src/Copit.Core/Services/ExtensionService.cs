@@ -37,12 +37,38 @@ public class ExtAgentTemplate
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
-    /// <summary>Auftrag mit Platzhaltern {{ticket}}, {{project}}, {{branch}}.</summary>
+    /// <summary>Auftrag mit Platzhaltern {{ticket}}, {{project}}, {{branch}}, {{ext}} (gilt auch für AllowedTools).</summary>
     public string Prompt { get; set; } = "";
     public string Mode { get; set; } = "Edit";
     public string? Branch { get; set; }
     /// <summary>Zusätzlich erlaubte Tools (Claude-Muster).</summary>
     public List<string> AllowedTools { get; set; } = [];
+}
+
+/// <summary>Vorlage im Tool (Schnellauswahl für Prompt und Server).</summary>
+public class ExtToolPreset
+{
+    public string Title { get; set; } = "";
+    public string Prompt { get; set; } = "";
+    /// <summary>Server, die bei dieser Vorlage vorausgewählt werden (Namen, Groß-/Kleinschreibung egal).</summary>
+    public List<string> Servers { get; set; } = [];
+}
+
+/// <summary>Eigenes Tool einer Extension – erscheint als Eintrag in der Navigation.</summary>
+public class ExtTool
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Icon { get; set; } = "grid";
+    /// <summary>Art des Tools. Unterstützt: "mcp-prompt" (MCP-Server wählen + Auswertung prompten).</summary>
+    public string Kind { get; set; } = "mcp-prompt";
+    /// <summary>Zusätzliche Anweisungen an die KI für jede Ausführung.</summary>
+    public string SystemPrompt { get; set; } = "";
+    public string Placeholder { get; set; } = "";
+    public List<ExtToolPreset> Presets { get; set; } = [];
+    /// <summary>Darf die KI Dateien im Projektordner lesen (Voreinstellung, im Tool umschaltbar).</summary>
+    public bool ReadFiles { get; set; }
 }
 
 public class ExtPermission
@@ -63,6 +89,7 @@ public class ExtensionManifest
     public List<ExtAgentTemplate> AgentTemplates { get; set; } = [];
     public List<Automation> Automations { get; set; } = [];
     public List<ExtPermission> Permissions { get; set; } = [];
+    public List<ExtTool> Tools { get; set; } = [];
 }
 
 public class InstalledExtension
@@ -117,6 +144,8 @@ public class ExtensionService(DataService data, SettingsService settings)
         return new(parts[0], parts[1], parts.Length > 2 ? string.Join('/', parts.Skip(2)) : null, @ref);
     }
 
+    public static readonly string[] KnownToolKinds = ["mcp-prompt"];
+
     public static ExtensionManifest ReadManifest(string dir)
     {
         var file = Path.Combine(dir, ManifestFile);
@@ -126,6 +155,11 @@ public class ExtensionService(DataService data, SettingsService settings)
         if (string.IsNullOrWhiteSpace(m.Name)) m.Name = m.Id;
         foreach (var a in m.Actions)
             if (string.IsNullOrWhiteSpace(a.Id) || string.IsNullOrWhiteSpace(a.Run)) throw new InvalidOperationException("Manifest: jede Aktion braucht \"id\" und \"run\".");
+        foreach (var t in m.Tools)
+        {
+            if (string.IsNullOrWhiteSpace(t.Id) || string.IsNullOrWhiteSpace(t.Title)) throw new InvalidOperationException("Manifest: jedes Tool braucht \"id\" und \"title\".");
+            if (!KnownToolKinds.Contains(t.Kind)) throw new InvalidOperationException($"Manifest: Tool-Art \"{t.Kind}\" wird von dieser Copit-Version nicht unterstützt.");
+        }
         return m;
     }
 
@@ -136,6 +170,7 @@ public class ExtensionService(DataService data, SettingsService settings)
         if (m.Description.Length > 0) lines.Add(m.Description);
         if (m.Actions.Count > 0) lines.Add($"Führt Befehle aus: {string.Join("; ", m.Actions.Select(a => a.Run))}");
         if (m.AgentTemplates.Count > 0) lines.Add($"Agent-Vorlagen: {string.Join(", ", m.AgentTemplates.Select(t => t.Title))}");
+        if (m.Tools.Count > 0) lines.Add($"Tools: {string.Join(", ", m.Tools.Select(t => t.Title))}");
         if (m.Automations.Count > 0) lines.Add($"Automationen (deaktiviert): {string.Join(", ", m.Automations.Select(a => a.Name))}");
         if (m.Permissions.Count > 0) lines.Add($"Regeln: {string.Join(", ", m.Permissions.Select(p => $"{p.Level} {p.Pattern}"))}");
         return string.Join("\n", lines);
@@ -323,6 +358,15 @@ public class ExtensionService(DataService data, SettingsService settings)
     }
 
     // ------------------------------------------------------------ Beiträge
+
+    /// <summary>Platzhalter in Agent-Vorlagen: {{ticket}}, {{project}}, {{branch}}, {{ext}} (Extension-Ordner mit '/', z. B. für Skriptaufrufe).</summary>
+    public static string FillTemplate(string text, string ticket, string project, string branch, string extDir) =>
+        text.Replace("{{ticket}}", ticket.Trim().ToUpperInvariant()).Replace("{{project}}", project).Replace("{{branch}}", branch)
+            .Replace("{{ext}}", extDir.Replace('\\', '/').TrimEnd('/'));
+
+    /// <summary>Tools aktiver Extensions; Route "ext:&lt;extension&gt;/&lt;tool&gt;".</summary>
+    public IEnumerable<(InstalledExtension Ext, ExtTool Tool, string Route)> Tools =>
+        Active.SelectMany(e => e.Manifest.Tools.Select(t => (e, t, $"ext:{e.Manifest.Id}/{t.Id}")));
 
     public IEnumerable<(InstalledExtension Ext, ExtAgentTemplate Template)> AgentTemplates =>
         Active.SelectMany(e => e.Manifest.AgentTemplates.Select(t => (e, t)));

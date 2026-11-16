@@ -55,6 +55,11 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
     [ObservableProperty] public partial string CopilotArgs { get; set; } = "";
     [ObservableProperty] public partial string CopilotTest { get; set; } = "";
     [ObservableProperty] public partial string Instructions { get; set; } = "";
+    // Token sparen: Skript-Bibliothek
+    [ObservableProperty] public partial bool ScriptsEnabled { get; set; }
+    [ObservableProperty] public partial bool ScriptsPerProject { get; set; }
+    public System.Collections.ObjectModel.ObservableCollection<ScriptInfo> Scripts { get; } = [];
+    [ObservableProperty] public partial string ScriptsInfo { get; set; } = "";
     // Zeit
     [ObservableProperty] public partial string MinHours { get; set; } = "";
     [ObservableProperty] public partial string DayStart { get; set; } = "";
@@ -81,6 +86,8 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
         ClaudePath = st.Ai.ClaudePath; ClaudeModel = st.Ai.ClaudeModel; ClaudeArgs = st.Ai.ClaudeExtraArgs;
         CopilotPath = st.Ai.CopilotPath; CopilotModel = st.Ai.CopilotModel; CopilotArgs = st.Ai.CopilotExtraArgs;
         Instructions = st.Ai.GlobalInstructions;
+        ScriptsEnabled = st.Ai.Scripts.Enabled; ScriptsPerProject = st.Ai.Scripts.Scope == "project";
+        LoadScripts();
         MinHours = st.Time.MinHoursPerDay.ToString("0.##", De); DayStart = st.Time.DayStart; Rounding = st.Time.RoundingMinutes.ToString();
         foreach (var w in WorkDays) w.On = st.Time.WorkDays.Contains(w.Day);
         if (string.IsNullOrEmpty(ClaudeTest)) _ = DetectAsync();
@@ -107,12 +114,35 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
         st.Ai.ClaudePath = ClaudePath.Trim(); st.Ai.ClaudeModel = ClaudeModel.Trim(); st.Ai.ClaudeExtraArgs = ClaudeArgs.Trim();
         st.Ai.CopilotPath = CopilotPath.Trim(); st.Ai.CopilotModel = CopilotModel.Trim(); st.Ai.CopilotExtraArgs = CopilotArgs.Trim();
         st.Ai.GlobalInstructions = Instructions;
+        st.Ai.Scripts.Enabled = ScriptsEnabled; st.Ai.Scripts.Scope = ScriptsPerProject ? "project" : "global";
         if (double.TryParse(MinHours.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var h)) st.Time.MinHoursPerDay = h;
         if (TimeOnly.TryParse(DayStart, out _)) st.Time.DayStart = DayStart.Trim();
         if (int.TryParse(Rounding, out var r) && r > 0) st.Time.RoundingMinutes = r;
         st.Time.WorkDays = WorkDays.Where(w => w.On).Select(w => w.Day).ToList();
         _s.SetSecret(SecretKeys.JiraToken, JiraToken.Trim());
         _s.SetSecret(SecretKeys.GitLabToken, GitLabToken.Trim());
+    }
+
+    /// <summary>Globale Bibliothek anzeigen (bei „pro Projekt“ liegt sie in .copit/scripts des jeweiligen Repos).</summary>
+    private void LoadScripts()
+    {
+        Scripts.Clear();
+        var dir = AppPaths.Dir("scripts");
+        foreach (var x in ScriptLibrary.List(dir).OrderByDescending(x => x.Uses)) Scripts.Add(x);
+        ScriptsInfo = ScriptsPerProject
+            ? "Pro Projekt: Skripte liegen in .copit/scripts des jeweiligen Repos (können mit eingecheckt werden). Unten die globale Bibliothek."
+            : $"Global für alle Projekte: {dir} · {Scripts.Count} Skripte, {Scripts.Sum(x => x.Uses)} Aufrufe";
+    }
+
+    partial void OnScriptsPerProjectChanged(bool value) => LoadScripts();
+
+    [RelayCommand]
+    private void OpenScripts()
+    {
+        var dir = AppPaths.Dir("scripts");
+        ScriptLibrary.Seed(dir);
+        LoadScripts();
+        Dialogs.OpenFolder(dir);
     }
 
     [RelayCommand]

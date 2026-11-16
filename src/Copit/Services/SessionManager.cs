@@ -534,6 +534,9 @@ public partial class SessionHost : ObservableObject
 
     public void AddSystem(string text) => Add(new ChatMessage { Role = ChatRole.System, Text = text }).IsDone = true;
 
+    /// <summary>Ordner der Skript-Bibliothek für den laufenden Lauf (null = Einstellung aus).</summary>
+    private string? _scriptDir;
+
     private string BuildSystemPrompt()
     {
         var parts = new List<string>();
@@ -546,7 +549,19 @@ public partial class SessionHost : ObservableObject
             if (!string.IsNullOrWhiteSpace(p.Instructions)) parts.Add(p.Instructions);
         }
         parts.Add(QuestionParser.Instructions);
+        if (_scriptDir != null)
+            parts.Add(ScriptLibrary.Instructions(_scriptDir, ScriptLibrary.List(_scriptDir), Session.Mode is AgentMode.Edit or AgentMode.Auto));
         return string.Join("\n\n", parts);
+    }
+
+    private void TrackScriptUse(string inputJson)
+    {
+        try
+        {
+            var cmd = System.Text.Json.Nodes.JsonNode.Parse(inputJson)?["command"]?.GetValue<string>();
+            if (!string.IsNullOrEmpty(cmd)) ScriptLibrary.RecordUse(_scriptDir!, cmd);
+        }
+        catch { }
     }
 
     [RelayCommand]
@@ -615,6 +630,18 @@ public partial class SessionHost : ObservableObject
             disallowed.AddRange(d);
         }
         Session.AllowedOnce.Clear();
+        // Token sparen: Skript-Bibliothek (nur Ausführen/Schreiben in deren Ordner freigeben)
+        _scriptDir = null;
+        if (_settings.Settings.Ai.Scripts.Enabled && !Session.RestrictedTools)
+        {
+            try
+            {
+                _scriptDir = ScriptLibrary.Dir(_settings.Settings.Ai.Scripts, p?.SourceFolder);
+                ScriptLibrary.Seed(_scriptDir);
+                allowed.AddRange(ScriptLibrary.AllowedTools(_scriptDir));
+            }
+            catch { _scriptDir = null; }
+        }
         var request = new AgentRequest
         {
             Prompt = prompt,
@@ -626,6 +653,7 @@ public partial class SessionHost : ObservableObject
             DisallowedTools = disallowed.Distinct().ToList(),
             AppendSystemPrompt = BuildSystemPrompt(),
             History = Provider == AiProvider.Copilot ? history.Take(history.Count - 1).ToList() : [],
+            AdditionalDirs = _scriptDir != null ? [_scriptDir] : [],
         };
 
         try
@@ -744,6 +772,7 @@ public partial class SessionHost : ObservableObject
 
             case AgentToolUse tu:
                 if (_streaming != null) { _streaming.IsDone = true; _streaming = null; }
+                if (_scriptDir != null && tu.Name == "Bash") TrackScriptUse(tu.InputJson);
                 var vm = Add(new ChatMessage { Role = ChatRole.Tool, ToolName = tu.Name, ToolUseId = tu.Id, ToolInput = tu.InputJson });
                 Status = $"{vm.ToolVerb} {vm.ToolSummary}";
                 _toolStart[tu.Id] = DateTime.Now;

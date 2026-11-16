@@ -41,7 +41,16 @@
                     <VerticalStackLayout BindableLayout.ItemsSource="{Binding Projects}" Spacing="1">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
-                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Padding="6,5" BackgroundColor="Transparent">
+                                <Grid>
+                                <Grid IsVisible="{Binding IsFolder}" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" Padding="{Binding Indent}" BackgroundColor="Transparent">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.ToggleFolderCommand}" CommandParameter="{Binding .}" />
+                                    </Grid.GestureRecognizers>
+                                    <c:Icon Name="{Binding Chevron}" Size="11" Color="{StaticResource Muted}" VerticalOptions="Center" />
+                                    <Label Grid.Column="1" Text="{Binding FolderName}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource Text2}" LineBreakMode="TailTruncation" VerticalOptions="Center" />
+                                    <Label Grid.Column="2" Text="{Binding Count}" Style="{StaticResource Caption}" FontSize="9.5" VerticalOptions="Center" />
+                                </Grid>
+                                <Grid IsVisible="{Binding IsProject}" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Padding="{Binding Indent}" BackgroundColor="Transparent">
                                     <Grid.GestureRecognizers>
                                         <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenProjectCommand}" CommandParameter="{Binding Project}" />
                                     </Grid.GestureRecognizers>
@@ -51,6 +60,7 @@
                                         <c:PulseDot Color="{StaticResource Accent}" Pulsing="{Binding IsRunning}" IsVisible="{Binding IsRunning}" WidthRequest="6" HeightRequest="6" />
                                         <Label Text="{Binding Ago}" Style="{StaticResource Caption}" FontSize="9.5" IsVisible="{Binding IsRunning, Converter={StaticResource Not}}" VerticalOptions="Center" />
                                     </Grid>
+                                </Grid>
                                 </Grid>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>

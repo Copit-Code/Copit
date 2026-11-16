@@ -19,6 +19,7 @@ public partial class MainPage : ContentPage
         (Routes.Home, "home", "Cockpit", false),
         (Routes.Time, "calendar", "Zeitbuchung", false),
         (Routes.Board, "list", "Agents", false),
+        (Routes.Changes, "diff", "Änderungen", false),
         (Routes.Session, "chat", "Session", false),
         (Routes.Activity, "activity", "Activity", false),
         (Routes.Budgets, "zap", "Budgets", false),
@@ -44,6 +45,11 @@ public partial class MainPage : ContentPage
             var row = NavRow(item.Route, item.Icon, item.Label);
             (item.Bottom ? NavBottom : NavStack).Children.Add(row);
         }
+        // Tools aus Extensions (z. B. MCP-Auswertung) als eigene Navigationseinträge
+        NavStack.Children.Add(_extToolNav);
+        var extensions = sp.GetRequiredService<ExtensionService>();
+        extensions.Changed += () => MainThread.BeginInvokeOnMainThread(() => BuildExtensionNav(extensions));
+        BuildExtensionNav(extensions);
 
         nav.Navigated += Show;
         toasts.Shown += ShowToast;
@@ -55,7 +61,10 @@ public partial class MainPage : ContentPage
             shell.LoadProjects();
             var settings = sp.GetRequiredService<SettingsService>();
             var start = Environment.GetEnvironmentVariable("COPIT_START_ROUTE");
-            Show(!string.IsNullOrEmpty(start) ? start : settings.JiraConfigured || settings.GitLabConfigured ? Routes.Home : Routes.Settings, null);
+            // Startseite ist immer das Cockpit; ohne Verbindungen nur ein Hinweis auf die Einstellungen
+            Show(!string.IsNullOrEmpty(start) ? start : Routes.Home, null);
+            if (string.IsNullOrEmpty(start) && !settings.JiraConfigured && !settings.GitLabConfigured)
+                toasts.Show("Noch keine Verbindungen", "Jira/GitLab unter Einstellungen verbinden – Klicken zum Öffnen", NoticeLevel.Info, "settings", null);
             shell.StartClock();
             var mgr = sp.GetRequiredService<SessionManager>(); // verbindet Agents mit dem Automations-Motor
             mgr.Warn += (t, m) => toasts.Show(t, m, NoticeLevel.Warning);
@@ -120,6 +129,18 @@ public partial class MainPage : ContentPage
         Dispatcher.StartTimer(TimeSpan.FromSeconds(20), () => { _ = Check(); return false; });
     }
 
+    private readonly VerticalStackLayout _extToolNav = new() { Spacing = 1 };
+
+    private void BuildExtensionNav(ExtensionService extensions)
+    {
+        foreach (var child in _extToolNav.Children.OfType<Grid>()) _navRows.Remove(_navRows.First(x => x.Value.Row == child).Key);
+        _extToolNav.Children.Clear();
+        var tools = extensions.Tools.ToList();
+        if (tools.Count == 0) return;
+        foreach (var (_, tool, route) in tools) _extToolNav.Children.Add(NavRow(route, tool.Icon, tool.Title));
+        if (!string.IsNullOrEmpty(ActiveRoute)) Highlight(ActiveRoute);
+    }
+
     private static Color C(string key) => (Color)Application.Current!.Resources[key];
 
     private Grid NavRow(string route, string icon, string text)
@@ -150,7 +171,7 @@ public partial class MainPage : ContentPage
     private View Resolve(string route)
     {
         if (_views.TryGetValue(route, out var v)) return v;
-        v = route switch
+        v = route.StartsWith("ext:") ? ActivatorUtilities.CreateInstance<ExtensionToolView>(_sp) : route switch
         {
             Routes.Home => _sp.GetRequiredService<DashboardView>(),
             Routes.Time => _sp.GetRequiredService<TimeView>(),
@@ -165,6 +186,7 @@ public partial class MainPage : ContentPage
             Routes.Customize => _sp.GetRequiredService<CustomizeView>(),
             Routes.Docs => _sp.GetRequiredService<DocsView>(),
             Routes.Extensions => _sp.GetRequiredService<ExtensionsView>(),
+            Routes.Changes => _sp.GetRequiredService<ChangesView>(),
             _ => _sp.GetRequiredService<SettingsView>(),
         };
         v.IsVisible = false;
@@ -187,6 +209,7 @@ public partial class MainPage : ContentPage
         }
         try
         {
+            if (route.StartsWith("ext:")) parameter ??= route;
             if (view is IActivatable a) a.OnActivated(parameter);
             else if (view.BindingContext is IActivatable vm) vm.OnActivated(parameter);
         }
@@ -251,6 +274,7 @@ public partial class MainPage : ContentPage
                     case "project": _nav.Go(Routes.Project, t.ActionArg); break;
                     case "automation": _nav.Go(Routes.Automations); break;
                     case "extensions": _nav.Go(Routes.Extensions); break;
+                    case "settings": _nav.Go(Routes.Settings); break;
                     case "update":
                         _ = Task.Run(async () =>
                         {

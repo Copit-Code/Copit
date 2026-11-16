@@ -94,6 +94,8 @@ public class ClaudeCliRunner(SettingsService settings) : CliRunnerBase(settings)
         if (r.DisallowedTools.Count > 0) { args.Add("--disallowedTools"); args.Add(string.Join(",", r.DisallowedTools)); }
         if (!string.IsNullOrWhiteSpace(r.AppendSystemPrompt)) { args.Add("--append-system-prompt"); args.Add(r.AppendSystemPrompt); }
         foreach (var d in r.AdditionalDirs) { args.Add("--add-dir"); args.Add(d); }
+        if (!string.IsNullOrWhiteSpace(r.McpConfigPath)) { args.Add("--mcp-config"); args.Add(r.McpConfigPath); }
+        if (r.StrictMcpConfig) args.Add("--strict-mcp-config");
         args.AddRange(ProcessRunner.SplitArgs(extraArgs));
         return args;
     }

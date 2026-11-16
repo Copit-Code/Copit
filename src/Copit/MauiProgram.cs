@@ -86,6 +86,8 @@ public static class MauiProgram
         s.AddSingleton<UpdateService>();
         s.AddSingleton<ExtensionService>();
         s.AddSingleton<DocsService>();
+        s.AddSingleton<TicketChangesService>();
+        s.AddSingleton<McpAnalysisService>();
         s.AddSingleton<ActivityService>(_ => new ActivityService());
         // App
         s.AddSingleton<NavigationService>();
@@ -116,6 +118,7 @@ public static class MauiProgram
         s.AddSingleton<AutomationsView>();
         s.AddSingleton<CustomizeView>();
         s.AddSingleton<DocsView>();
+        s.AddSingleton<ChangesView>();
         s.AddSingleton<ExtensionsView>();
 
         return builder.Build();

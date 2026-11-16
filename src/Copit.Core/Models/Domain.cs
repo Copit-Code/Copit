@@ -14,6 +14,8 @@ public class CopitProject
     public DateTime LastOpened { get; set; } = DateTime.Now;
     /// <summary>Projektspezifische Anweisungen für die KI.</summary>
     public string Instructions { get; set; } = "";
+    /// <summary>Ordner in der Projektliste ("" = ohne Ordner), Unterordner mit '/', z. B. "Kunde A/Backend".</summary>
+    public string Group { get; set; } = "";
 
     public string JiraProjectKey => EpicKey.Contains('-') ? EpicKey[..EpicKey.LastIndexOf('-')] : EpicKey;
 }

@@ -3,7 +3,13 @@ using Copit.Core.Storage;
 
 namespace Copit.Core.Services;
 
-public class ProjectsData { public List<CopitProject> Projects { get; set; } = []; public string? ActiveProjectId { get; set; } }
+public class ProjectsData
+{
+    public List<CopitProject> Projects { get; set; } = [];
+    public string? ActiveProjectId { get; set; }
+    /// <summary>Projektordner (auch leere) mit Auf-/Zuklapp-Zustand.</summary>
+    public List<ProjectFolder> Folders { get; set; } = [];
+}
 public class NotesData { public List<ProjectNote> Notes { get; set; } = []; }
 public class DaysData { public Dictionary<string, DayEntry> Days { get; set; } = []; }
 public class AutomationsData { public List<Automation> Automations { get; set; } = []; public List<AutomationRun> Runs { get; set; } = []; public bool Seeded { get; set; } }

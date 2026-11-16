@@ -13,7 +13,10 @@
                         <Label Text="PROJEKTE" Style="{StaticResource Caption}" />
                         <Label Text="Epics &amp; Codebasen" Style="{StaticResource H1}" />
                     </VerticalStackLayout>
-                    <Button Grid.Column="1" Text="Neues Projekt" Style="{StaticResource Primary}" Command="{Binding NewCommand}" VerticalOptions="Center" />
+                    <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Center">
+                        <Button Text="Neuer Ordner" Command="{Binding NewFolderCommand}" CommandParameter="{x:Null}" />
+                        <Button Text="Neues Projekt" Style="{StaticResource Primary}" Command="{Binding NewCommand}" />
+                    </HorizontalStackLayout>
                 </Grid>
 
                 <VerticalStackLayout IsVisible="{Binding IsEmpty}" Spacing="12" Margin="0,40,0,0" WidthRequest="520" HorizontalOptions="Start">
@@ -35,41 +38,67 @@
                         <Label Grid.Column="5" Text="SESSIONS" Style="{StaticResource Caption}" />
                     </Grid>
                     <BoxView HeightRequest="1" Color="{StaticResource LineSoft}" />
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Projects}" Spacing="0">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Rows}" Spacing="0">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
                                 <VerticalStackLayout Spacing="0">
-                                    <Grid ColumnDefinitions="110,2*,1.4*,110,170,90,110" ColumnSpacing="16" Padding="10,12" BackgroundColor="Transparent">
+                                    <!-- Ordner-Kopf: Klick klappt auf/zu, Projekte lassen sich hierher ziehen -->
+                                    <Grid IsVisible="{Binding IsFolder}" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8" Padding="{Binding Indent}" BackgroundColor="{StaticResource Bg2}">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.ToggleFolderCommand}" CommandParameter="{Binding .}" />
+                                            <DropGestureRecognizer AllowDrop="True" DragOver="OnFolderDragOver" DragLeave="OnFolderDragLeave" Drop="OnFolderDrop" />
+                                        </Grid.GestureRecognizers>
+                                        <c:Icon Name="{Binding Chevron}" Size="13" Color="{StaticResource Muted}" VerticalOptions="Center" />
+                                        <c:Icon Grid.Column="1" Name="folder" Size="14" Color="{StaticResource Accent}" VerticalOptions="Center" />
+                                        <Label Grid.Column="2" Text="{Binding FolderName}" FontSize="13.5" FontAttributes="Bold" VerticalOptions="Center" LineBreakMode="TailTruncation" />
+                                        <Label Grid.Column="3" Text="{Binding Count, StringFormat='{0} Projekte'}" Style="{StaticResource MonoLabel}" TextColor="{StaticResource Muted}" VerticalOptions="Center" />
+                                        <c:IconButton Grid.Column="4" Icon="more" IconSize="13" WidthRequest="26" HeightRequest="26" ToolTipProperties.Text="Ordner-Aktionen"
+                                                      Command="{Binding Source={x:Reference Root}, Path=BindingContext.FolderMenuCommand}" CommandParameter="{Binding .}" />
+                                    </Grid>
+                                    <!-- Projekt -->
+                                    <Grid IsVisible="{Binding IsProject}" ColumnDefinitions="110,2*,1.4*,110,170,90,150" ColumnSpacing="16" Padding="{Binding Indent}" BackgroundColor="Transparent">
                                         <Grid.GestureRecognizers>
                                             <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenCommand}" CommandParameter="{Binding .}" />
+                                            <DragGestureRecognizer CanDrag="True" DragStarting="OnProjectDragStarting" />
                                         </Grid.GestureRecognizers>
-                                        <Label Text="{Binding Project.EpicKey}" Style="{StaticResource Key}" VerticalOptions="Center" />
+                                        <Label Text="{Binding Card.Project.EpicKey}" Style="{StaticResource Key}" VerticalOptions="Center" />
                                         <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                            <Label Text="{Binding Project.Name}" FontSize="13.5" LineBreakMode="TailTruncation" />
-                                            <Label Text="{Binding EpicSummary}" FontSize="11.5" TextColor="{StaticResource Muted}" LineBreakMode="TailTruncation" IsVisible="{Binding EpicSummary, Converter={StaticResource HasText}}" />
+                                            <Label Text="{Binding Card.Project.Name}" FontSize="13.5" LineBreakMode="TailTruncation" />
+                                            <Label Text="{Binding Card.EpicSummary}" FontSize="11.5" TextColor="{StaticResource Muted}" LineBreakMode="TailTruncation" IsVisible="{Binding Card.EpicSummary, Converter={StaticResource HasText}}" />
                                         </VerticalStackLayout>
                                         <HorizontalStackLayout Grid.Column="2" Spacing="6" VerticalOptions="Center">
                                             <c:Icon Name="branch" Size="13" Color="{StaticResource Muted}" />
-                                            <Label Text="{Binding Branch}" Style="{StaticResource MonoLabel}" LineBreakMode="MiddleTruncation" MaximumWidthRequest="220" VerticalOptions="Center" />
-                                            <Label Text="{Binding Changes, StringFormat='±{0}'}" Style="{StaticResource MonoLabel}" TextColor="{StaticResource Amber}" VerticalOptions="Center" />
+                                            <Label Text="{Binding Card.Branch}" Style="{StaticResource MonoLabel}" LineBreakMode="MiddleTruncation" MaximumWidthRequest="220" VerticalOptions="Center" />
+                                            <Label Text="{Binding Card.Changes, StringFormat='±{0}'}" Style="{StaticResource MonoLabel}" TextColor="{StaticResource Amber}" VerticalOptions="Center" />
                                         </HorizontalStackLayout>
-                                        <HorizontalStackLayout Grid.Column="3" Spacing="6" VerticalOptions="Center" IsVisible="{Binding HasPipeline}">
-                                            <c:Icon Name="{Binding PipelineStatus, Converter={StaticResource StatusIcon}}" Size="13" Color="{Binding PipelineStatus, Converter={StaticResource StatusColor}}" />
-                                            <Label Text="{Binding PipelineStatus}" Style="{StaticResource Caption}" TextColor="{Binding PipelineStatus, Converter={StaticResource StatusColor}}" VerticalOptions="Center" />
+                                        <HorizontalStackLayout Grid.Column="3" Spacing="6" VerticalOptions="Center" IsVisible="{Binding Card.HasPipeline}">
+                                            <c:Icon Name="{Binding Card.PipelineStatus, Converter={StaticResource StatusIcon}}" Size="13" Color="{Binding Card.PipelineStatus, Converter={StaticResource StatusColor}}" />
+                                            <Label Text="{Binding Card.PipelineStatus}" Style="{StaticResource Caption}" TextColor="{Binding Card.PipelineStatus, Converter={StaticResource StatusColor}}" VerticalOptions="Center" />
                                         </HorizontalStackLayout>
                                         <VerticalStackLayout Grid.Column="4" Spacing="5" VerticalOptions="Center">
-                                            <ProgressBar Progress="{Binding Progress}" />
-                                            <Label Text="{Binding ProgressText}" Style="{StaticResource MonoLabel}" FontSize="10.5" TextColor="{StaticResource Muted}" />
+                                            <ProgressBar Progress="{Binding Card.Progress}" />
+                                            <Label Text="{Binding Card.ProgressText}" Style="{StaticResource MonoLabel}" FontSize="10.5" TextColor="{StaticResource Muted}" />
                                         </VerticalStackLayout>
-                                        <Label Grid.Column="5" Text="{Binding Sessions}" Style="{StaticResource MonoLabel}" VerticalOptions="Center" />
-                                        <Button Grid.Column="6" Text="Session" Style="{StaticResource Chip}" HorizontalOptions="End" VerticalOptions="Center"
-                                                Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenSessionCommand}" CommandParameter="{Binding .}" />
+                                        <Label Grid.Column="5" Text="{Binding Card.Sessions}" Style="{StaticResource MonoLabel}" VerticalOptions="Center" />
+                                        <HorizontalStackLayout Grid.Column="6" Spacing="6" HorizontalOptions="End" VerticalOptions="Center">
+                                            <c:IconButton Icon="folder" IconSize="13" WidthRequest="26" HeightRequest="26" ToolTipProperties.Text="In Ordner verschieben"
+                                                          Command="{Binding Source={x:Reference Root}, Path=BindingContext.MoveProjectCommand}" CommandParameter="{Binding .}" />
+                                            <Button Text="Session" Style="{StaticResource Chip}"
+                                                    Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenSessionCommand}" CommandParameter="{Binding .}" />
+                                        </HorizontalStackLayout>
                                     </Grid>
                                     <BoxView HeightRequest="1" Color="{StaticResource LineSoft}" />
                                 </VerticalStackLayout>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
                     </VerticalStackLayout>
+                    <!-- Ablagefläche: Projekt aus einem Ordner herausziehen -->
+                    <Border x:Name="RootDrop" Padding="10,8" Margin="0,8,0,0" StrokeThickness="1" Stroke="{StaticResource LineSoft}" StrokeDashArray="3,3">
+                        <Border.GestureRecognizers>
+                            <DropGestureRecognizer AllowDrop="True" DragOver="OnFolderDragOver" DragLeave="OnFolderDragLeave" Drop="OnFolderDrop" />
+                        </Border.GestureRecognizers>
+                        <Label Text="Projekt hierher ziehen = ohne Ordner · auf einen Ordner ziehen = verschieben" Style="{StaticResource Caption}" TextColor="{StaticResource Muted}" />
+                    </Border>
                 </VerticalStackLayout>
             </VerticalStackLayout>
         </ScrollView>

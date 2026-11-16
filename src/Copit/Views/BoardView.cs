@@ -189,6 +189,7 @@ public class BoardView : ContentView, IActivatable
         var h = _mgr.Host(a);
         var opts = new List<string> { "Öffnen" };
         if (h.IsRunning) opts.Add("Stoppen");
+        if (!string.IsNullOrWhiteSpace(a.Ticket)) opts.Add("Code-Änderungen des Tickets");
         opts.AddRange(AgentStatusInfo.Columns.Where(c => c.Status != a.Status).Select(c => "→ " + c.Title));
         opts.Add("Archivieren");
         opts.Add("Löschen");
@@ -196,6 +197,7 @@ public class BoardView : ContentView, IActivatable
         if (pick == null) return;
         if (pick == "Öffnen") _nav.Go(Routes.Session, h);
         else if (pick == "Stoppen") h.Stop();
+        else if (pick == "Code-Änderungen des Tickets") { _nav.Go(Routes.Changes, new ChangesRequest(a.ProjectId, a.Ticket)); return; }
         else if (pick.StartsWith("→ ")) Move(a, AgentStatusInfo.Columns.First(c => c.Title == pick[2..]).Status);
         else if (pick == "Archivieren") _mgr.Archive(a);
         else if (pick == "Löschen" && await Dialogs.Confirm("Agent löschen?", $"{a.Title}{(a.Worktree ? "\nDer Worktree wird ebenfalls entfernt." : "")}", "Löschen"))
@@ -229,13 +231,13 @@ public class BoardView : ContentView, IActivatable
                 {
                     templateIndex = i;
                     if (i == 0) { extraTools = []; Build(); return; }
-                    var t = templates[i - 1].Template;
-                    string Fill(string x) => x.Replace("{{ticket}}", ticket.Trim().ToUpperInvariant()).Replace("{{project}}", project.Name).Replace("{{branch}}", branch);
+                    var (tplExt, t) = templates[i - 1];
+                    string Fill(string x) => ExtensionService.FillTemplate(x, ticket, project.Name, branch, tplExt.Dir);
                     title = Fill(t.Title);
                     prompt = Fill(t.Prompt);
                     if (Enum.TryParse<AgentMode>(t.Mode, true, out var md)) mode = md;
                     if (!string.IsNullOrWhiteSpace(t.Branch) && branch.Length == 0) branch = Fill(t.Branch!);
-                    extraTools = t.AllowedTools;
+                    extraTools = [.. t.AllowedTools.Select(Fill)];
                     Build();
                 })));
             form.Add(Stack(4, Caption("Projekt"), Pick(projects.Select(p => $"{p.Name}{(string.IsNullOrEmpty(p.EpicKey) ? "" : " · " + p.EpicKey)}").ToList(), projects.IndexOf(project), i => project = projects[i])));
