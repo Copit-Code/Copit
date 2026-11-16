@@ -10,8 +10,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version (z. B. 0.2.1) – nur für Testläufe ohne Tag"
+        description: "Version (z. B. 0.4.0) – ohne Tag-Push: Tag vX.Y.Z wird auf dem gebauten Commit angelegt"
         required: true
+      publish:
+        description: "Release sofort veröffentlichen (sonst Entwurf)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -104,7 +108,8 @@ jobs:
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
           name: Copit ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
-          draft: ${{ github.ref_type != 'tag' }}
+          draft: ${{ github.ref_type != 'tag' && !inputs.publish }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           body_path: ${{ steps.notes.outputs.path }}
           generate_release_notes: true
