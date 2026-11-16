@@ -79,6 +79,15 @@ public class AiSettings
     public DailyLimit ClaudeLimit { get; set; } = new() { Unit = "usd" };
     /// <summary>Tageslimit für Copit-Agents mit Copilot (0 = aus). Copilot meldet keine Kosten → Stunden oder Läufe.</summary>
     public DailyLimit CopilotLimit { get; set; } = new() { Unit = "hours" };
+    /// <summary>Token sparen: Skript-Bibliothek für wiederkehrende Aufgaben.</summary>
+    public ScriptLibrarySettings Scripts { get; set; } = new();
+}
+
+public class ScriptLibrarySettings
+{
+    public bool Enabled { get; set; }
+    /// <summary>"global" (%LOCALAPPDATA%\Copit\scripts, für alle Projekte) oder "project" (.copit/scripts im Repo).</summary>
+    public string Scope { get; set; } = "global";
 }
 
 public class DailyLimit
