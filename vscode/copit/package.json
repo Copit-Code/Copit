@@ -1,0 +1,101 @@
+{
+  "name": "copit",
+  "displayName": "Copit – Agent IDE",
+  "description": "KI-Agenten (Claude CLI / Copilot CLI) mit Kanban-Board, Agent-Flow, Kalender, Git-Permissions und Automationen für Git & Jira.",
+  "version": "0.1.0",
+  "publisher": "copit",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["AI", "Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "themes": [
+      { "label": "Copit Dark", "uiTheme": "vs-dark", "path": "./themes/copit-dark.json" }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "copit", "title": "Copit", "icon": "media/copit.svg" }
+      ]
+    },
+    "views": {
+      "copit": [
+        { "id": "copit.agents", "name": "Agents" },
+        { "id": "copit.automations", "name": "Automationen" }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "copit.agents",
+        "contents": "Noch keine Agents.\n[Neuer Agent](command:copit.newAgent)\n[Board öffnen](command:copit.openBoard)"
+      }
+    ],
+    "commands": [
+      { "command": "copit.newAgent", "title": "Neuer Agent", "category": "Copit", "icon": "$(add)" },
+      { "command": "copit.openBoard", "title": "Board öffnen", "category": "Copit", "icon": "$(project)" },
+      { "command": "copit.openCalendar", "title": "Agent-Kalender", "category": "Copit", "icon": "$(calendar)" },
+      { "command": "copit.openPermissions", "title": "Permission-Matrix", "category": "Copit", "icon": "$(shield)" },
+      { "command": "copit.openAutomations", "title": "Automation-Builder", "category": "Copit", "icon": "$(zap)" },
+      { "command": "copit.openAgent", "title": "Agent öffnen", "category": "Copit" },
+      { "command": "copit.stopAgent", "title": "Agent stoppen", "category": "Copit", "icon": "$(debug-stop)" },
+      { "command": "copit.deleteAgent", "title": "Agent löschen", "category": "Copit", "icon": "$(trash)" },
+      { "command": "copit.toggleAutomation", "title": "Automation an/aus", "category": "Copit" },
+      { "command": "copit.setJiraToken", "title": "Jira-Token hinterlegen", "category": "Copit" },
+      { "command": "copit.setGitLabToken", "title": "GitLab-Token hinterlegen", "category": "Copit" },
+      { "command": "copit.openBudgets", "title": "Budgets", "category": "Copit", "icon": "$(credit-card)" },
+      { "command": "copit.checkUpdate", "title": "Nach Updates suchen", "category": "Copit" },
+      { "command": "copit.newAgentFromTicket", "title": "Agent aus Jira-Ticket", "category": "Copit", "icon": "$(issues)" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "copit.newAgent", "when": "view == copit.agents", "group": "navigation@1" },
+        { "command": "copit.openBoard", "when": "view == copit.agents", "group": "navigation@2" },
+        { "command": "copit.openCalendar", "when": "view == copit.agents", "group": "navigation@3" },
+        { "command": "copit.openBudgets", "when": "view == copit.agents", "group": "navigation@4" },
+        { "command": "copit.openPermissions", "when": "view == copit.agents", "group": "navigation@5" },
+        { "command": "copit.openAutomations", "when": "view == copit.automations", "group": "navigation@1" }
+      ],
+      "view/item/context": [
+        { "command": "copit.stopAgent", "when": "view == copit.agents && viewItem == agent-running", "group": "inline" },
+        { "command": "copit.deleteAgent", "when": "view == copit.agents && viewItem =~ /^agent/", "group": "9_delete" }
+      ]
+    },
+    "configuration": {
+      "title": "Copit",
+      "properties": {
+        "copit.claudePath": { "type": "string", "default": "", "description": "Pfad zur Claude CLI (leer = automatisch)." },
+        "copit.copilotPath": { "type": "string", "default": "", "description": "Pfad zur Copilot CLI (leer = automatisch)." },
+        "copit.defaultProvider": { "type": "string", "enum": ["claude", "copilot"], "default": "claude" },
+        "copit.claudeModel": { "type": "string", "default": "", "description": "Modell für Claude (z. B. opus, sonnet)." },
+        "copit.globalInstructions": { "type": "string", "default": "Antworte auf Deutsch. Halte Antworten kompakt." },
+        "copit.useWorktrees": { "type": "boolean", "default": true, "description": "Agents mit eigenem Branch laufen in einem eigenen Git-Worktree (parallel ohne Konflikte)." },
+        "copit.jira.url": { "type": "string", "default": "", "description": "URL des internen Jira (Server/DC)." },
+        "copit.jira.authMode": { "type": "string", "enum": ["bearer", "basic"], "default": "bearer" },
+        "copit.jira.user": { "type": "string", "default": "" },
+        "copit.gitlab.url": { "type": "string", "default": "" },
+        "copit.ignoreCertificateErrors": { "type": "boolean", "default": false, "description": "Zertifikatsfehler interner Server ignorieren." },
+        "copit.pollSeconds": { "type": "number", "default": 60, "description": "Abfrageintervall für Jira/GitLab-Trigger." },
+        "copit.update.repo": { "type": "string", "default": "", "description": "GitHub-Repository (owner/name) mit Copit-Releases für den Auto-Updater." },
+        "copit.update.auto": { "type": "boolean", "default": true, "description": "Beim Start und stündlich nach neuen Releases suchen." }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node esbuild.mjs --tests && node --test dist-test/core.test.js",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies --allow-missing-repository -o ../../dist/copit.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/sql.js": "^1.4.9",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "sql.js": "^1.11.0"
+  }
+}

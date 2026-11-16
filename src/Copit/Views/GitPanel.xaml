@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:c="clr-namespace:Copit.Controls"
+             x:Class="Copit.Views.GitPanel"
+             x:Name="Root">
+    <Grid BackgroundColor="{StaticResource Bg2}">
+        <ScrollView Padding="14">
+            <VerticalStackLayout Spacing="14">
+
+                <!-- Branch -->
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                    <Label Text="GIT" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                    <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" WidthRequest="16" HeightRequest="16" />
+                    <Label Grid.Column="2" Text="{Binding LastRefresh}" FontSize="10" TextColor="{StaticResource Muted}" VerticalOptions="Center" Margin="6,0" />
+                    <c:IconButton Icon="refresh" Grid.Column="3" Command="{Binding RefreshCommand}" ToolTipProperties.Text="Aktualisieren" />
+                </Grid>
+
+                <Label Text="{Binding Error}" TextColor="{StaticResource Amber}" FontSize="12" IsVisible="{Binding Error, Converter={StaticResource HasText}}" />
+
+                <Border Style="{StaticResource CardBox}" Padding="12" IsVisible="{Binding IsRepo}">
+                    <VerticalStackLayout Spacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <Label Text="" FontSize="16" TextColor="{StaticResource Cyan}" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="0">
+                                <Label Text="{Binding Branch}" FontAttributes="Bold" LineBreakMode="MiddleTruncation">
+                                    <Label.GestureRecognizers><TapGestureRecognizer Command="{Binding SwitchBranchCommand}" /></Label.GestureRecognizers>
+                                </Label>
+                                <Label Text="{Binding SyncInfo}" FontSize="11" TextColor="{StaticResource Muted}" />
+                            </VerticalStackLayout>
+                            <c:IconButton Icon="branch" Grid.Column="2" Command="{Binding SwitchBranchCommand}" ToolTipProperties.Text="Branch wechseln / erstellen" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                            <Button Text="Pull" Command="{Binding PullCommand}" Padding="6,5" />
+                            <Button Grid.Column="1" Text="Push" Command="{Binding PushCommand}" Padding="6,5" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Changes -->
+                <Border Style="{StaticResource CardBox}" Padding="12" IsVisible="{Binding IsRepo}">
+                    <VerticalStackLayout Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="{Binding ChangesTitle}" Style="{StaticResource H3}" VerticalOptions="Center" />
+                            <Button Grid.Column="1" Text="Diff" Style="{StaticResource Chip}" Command="{Binding OpenFullDiffCommand}" IsVisible="{Binding HasChanges}" />
+                        </Grid>
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Changes}" Spacing="2">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="22,*" Padding="4,4" ColumnSpacing="6">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenDiffCommand}" CommandParameter="{Binding .}" />
+                                        </Grid.GestureRecognizers>
+                                        <Label Text="{Binding Status}" Style="{StaticResource MonoLabel}" FontAttributes="Bold" FontSize="11" TextColor="{StaticResource Amber}">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding Kind}" Value="Neu"><Setter Property="TextColor" Value="{StaticResource Green}" /></DataTrigger>
+                                                <DataTrigger TargetType="Label" Binding="{Binding Kind}" Value="Gelöscht"><Setter Property="TextColor" Value="{StaticResource Red}" /></DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                        <VerticalStackLayout Grid.Column="1" Spacing="0">
+                                            <Label Text="{Binding FileName}" FontSize="12" LineBreakMode="TailTruncation" />
+                                            <Label Text="{Binding Folder}" FontSize="10.5" TextColor="{StaticResource Muted}" LineBreakMode="HeadTruncation" />
+                                        </VerticalStackLayout>
+                                    </Grid>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+
+                        <Button Text="Commit mit KI-Message" Style="{StaticResource Primary}" Command="{Binding StartCommitCommand}"
+                                IsVisible="{Binding HasChanges}">
+                            <Button.Triggers>
+                                <DataTrigger TargetType="Button" Binding="{Binding ShowCommit}" Value="True"><Setter Property="IsVisible" Value="False" /></DataTrigger>
+                            </Button.Triggers>
+                        </Button>
+
+                        <VerticalStackLayout Spacing="8" IsVisible="{Binding ShowCommit}">
+                            <Grid>
+                                <Editor Text="{Binding CommitMessage}" AutoSize="TextChanges" MinimumHeightRequest="70" Placeholder="Commit-Message" FontFamily="{StaticResource Mono}" FontSize="12" />
+                                <HorizontalStackLayout IsVisible="{Binding GeneratingMessage}" HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
+                                    <c:AiOrb WidthRequest="28" HeightRequest="28" IsActive="True" />
+                                    <Label Text="KI liest den Diff…" TextColor="{StaticResource Cyan}" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Button Text="Commit &amp; Push" Style="{StaticResource Primary}" Command="{Binding CommitAndPushCommand}" />
+                                <Button Grid.Column="1" Text="Commit" Command="{Binding CommitCommand}" />
+                                <c:IconButton Icon="refresh" Grid.Column="2" Command="{Binding GenerateMessageCommand}" ToolTipProperties.Text="Neu generieren" />
+                            </Grid>
+                            <Button Text="Abbrechen" Style="{StaticResource Ghost}" Command="{Binding CancelCommitCommand}" />
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Pipeline -->
+                <Label Text="PIPELINE" Style="{StaticResource Caption}" Margin="0,4,0,0" />
+                <Label Text="{Binding PipelineError}" FontSize="11.5" TextColor="{StaticResource Muted}" IsVisible="{Binding PipelineError, Converter={StaticResource HasText}}" />
+                <Border Style="{StaticResource CardBox}" Padding="12" IsVisible="{Binding HasPipeline}">
+                    <VerticalStackLayout Spacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                            <Border Style="{StaticResource Pill}" BackgroundColor="{Binding Pipeline.Status, Converter={StaticResource StatusSoft}}">
+                                <HorizontalStackLayout Spacing="5">
+                                    <c:Icon Name="{Binding Pipeline.Status, Converter={StaticResource StatusIcon}}" Color="{Binding Pipeline.Status, Converter={StaticResource StatusColor}}" Size="13" />
+                                    <Label Text="{Binding Pipeline.Status}" FontSize="11" FontAttributes="Bold" TextColor="{Binding Pipeline.Status, Converter={StaticResource StatusColor}}" />
+                                </HorizontalStackLayout>
+                            </Border>
+                            <Label Grid.Column="1" Text="{Binding Pipeline.Id, StringFormat='#{0}'}" Style="{StaticResource MonoLabel}" VerticalOptions="Center" />
+                            <c:IconButton Icon="refresh" Grid.Column="2" Command="{Binding RetryPipelineCommand}" ToolTipProperties.Text="Pipeline erneut ausführen" />
+                            <c:IconButton Icon="external" Grid.Column="3" Command="{Binding OpenPipelineCommand}" ToolTipProperties.Text="In GitLab öffnen" />
+                        </Grid>
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Jobs}" Spacing="2">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnDefinitions="18,*,Auto,Auto" ColumnSpacing="6" Padding="2,3">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.ShowJobLogCommand}" CommandParameter="{Binding .}" />
+                                        </Grid.GestureRecognizers>
+                                        <c:Icon Name="{Binding Status, Converter={StaticResource StatusIcon}}" Color="{Binding Status, Converter={StaticResource StatusColor}}" Size="14" />
+                                        <Label Grid.Column="1" FontSize="12" LineBreakMode="TailTruncation" VerticalOptions="Center">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="{Binding Stage}" TextColor="{StaticResource Muted}" />
+                                                    <Span Text="· " TextColor="{StaticResource Muted}" />
+                                                    <Span Text="{Binding Name}" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                        <Label Grid.Column="2" Text="{Binding Duration, StringFormat='{0:0}s'}" FontSize="10.5" TextColor="{StaticResource Muted}" VerticalOptions="Center" />
+                                        <Button Grid.Column="3" Text="Fix" Style="{StaticResource Chip}" Padding="8,2" MinimumHeightRequest="22" FontSize="11" IsVisible="False"
+                                                Command="{Binding Source={x:Reference Root}, Path=BindingContext.FixInSessionCommand}" CommandParameter="{Binding .}">
+                                            <Button.Triggers>
+                                                <DataTrigger TargetType="Button" Binding="{Binding Status}" Value="failed"><Setter Property="IsVisible" Value="True" /></DataTrigger>
+                                            </Button.Triggers>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+                <Button Text="Pipeline starten" IsVisible="{Binding CanRunPipeline}" Command="{Binding RunPipelineCommand}" />
+
+                <!-- Merge Request -->
+                <Label Text="MERGE REQUEST" Style="{StaticResource Caption}" Margin="0,4,0,0" />
+                <Border Style="{StaticResource CardBox}" Padding="12" IsVisible="{Binding HasMr}">
+                    <Border.GestureRecognizers><TapGestureRecognizer Command="{Binding OpenMrCommand}" /></Border.GestureRecognizers>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="{Binding MergeRequest.Title}" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                        <HorizontalStackLayout Spacing="6">
+                            <Label Text="{Binding MergeRequest.Iid, StringFormat='!{0}'}" Style="{StaticResource MonoLabel}" />
+                            <Label Text="{Binding MergeRequest.TargetBranch, StringFormat='→ {0}'}" FontSize="11" TextColor="{StaticResource Muted}" />
+                            <Label Text="{Binding MergeRequest.DetailedStatus}" FontSize="11" TextColor="{StaticResource Cyan}" />
+                        </HorizontalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+                <Button Text="MR erstellen (KI-Beschreibung)" IsVisible="{Binding CanCreateMr}" Command="{Binding CreateMrCommand}" />
+
+                <!-- Commits -->
+                <Label Text="LETZTE COMMITS" Style="{StaticResource Caption}" Margin="0,4,0,0" IsVisible="{Binding IsRepo}" />
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding Commits}" Spacing="6">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Label Text="{Binding Hash}" Style="{StaticResource MonoLabel}" FontSize="11" TextColor="{StaticResource Accent}" />
+                                <VerticalStackLayout Grid.Column="1" Spacing="0">
+                                    <Label Text="{Binding Subject}" FontSize="12" LineBreakMode="TailTruncation" />
+                                    <Label FontSize="10.5" TextColor="{StaticResource Muted}">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="{Binding Author}" />
+                                                <Span Text="· " />
+                                                <Span Text="{Binding Date, StringFormat='{0:dd.MM. HH:mm}'}" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                </VerticalStackLayout>
+                            </Grid>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentView>
+

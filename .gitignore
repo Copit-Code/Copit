@@ -1,0 +1,19 @@
+# .NET
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+
+# Node / Extension
+node_modules/
+vscode/copit/dist/
+vscode/copit/dist-test/
+*.vsix
+dist/
+
+# Lokal
+.copit/
+*.log
+.DS_Store
+Thumbs.db

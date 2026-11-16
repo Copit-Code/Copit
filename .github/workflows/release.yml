@@ -1,0 +1,37 @@
+name: Release
+
+# Ein Tag "vX.Y.Z" baut die VSCodium-Extension und veröffentlicht sie als GitHub-Release.
+# Der Auto-Updater in Copit prüft dieses Release und installiert die .vsix automatisch.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vscode/copit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/copit/package-lock.json
+      - run: npm ci
+      - name: Version aus Tag setzen
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      - run: npm test
+      - name: VSIX bauen
+        run: |
+          mkdir -p ../../dist
+          npm run package
+          mv ../../dist/copit.vsix "../../dist/copit-${GITHUB_REF_NAME#v}.vsix"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/copit-*.vsix
+          generate_release_notes: true

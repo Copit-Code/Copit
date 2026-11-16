@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:c="clr-namespace:Copit.Controls"
+             x:Class="Copit.Views.ToolsView"
+             x:Name="Root">
+    <ContentView.Resources>
+        <Style x:Key="SideTab" TargetType="Button" BasedOn="{StaticResource Ghost}">
+            <Setter Property="HorizontalOptions" Value="Fill" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style x:Key="Seg" TargetType="Button" BasedOn="{StaticResource Ghost}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="12,3" />
+            <Setter Property="HeightRequest" Value="28" />
+            <Setter Property="MinimumHeightRequest" Value="28" />
+        </Style>
+    </ContentView.Resources>
+
+    <Grid ColumnDefinitions="230,*">
+        <!-- ================= Sidebar ================= -->
+        <VerticalStackLayout BackgroundColor="{StaticResource Bg2}" Padding="10,18" Spacing="1">
+            <Label Text="TOOLS" Style="{StaticResource Caption}" Margin="6,0,0,10" />
+            <Grid ColumnDefinitions="2,30,*" HeightRequest="30" BackgroundColor="Transparent">
+                <Grid.Triggers><DataTrigger TargetType="Grid" Binding="{Binding IsReview}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource CardHover}" /></DataTrigger></Grid.Triggers>
+                <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="review" /></Grid.GestureRecognizers>
+                <BoxView Color="{StaticResource Accent}" IsVisible="{Binding IsReview}" />
+                <c:Icon Grid.Column="1" Name="review" Size="14" />
+                <Label Grid.Column="2" Text="Code-Review" FontSize="13" VerticalOptions="Center" />
+            </Grid>
+            <Grid ColumnDefinitions="2,30,*" HeightRequest="30" BackgroundColor="Transparent">
+                <Grid.Triggers><DataTrigger TargetType="Grid" Binding="{Binding IsAutomations}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource CardHover}" /></DataTrigger></Grid.Triggers>
+                <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="automations" /></Grid.GestureRecognizers>
+                <BoxView Color="{StaticResource Accent}" IsVisible="{Binding IsAutomations}" />
+                <c:Icon Grid.Column="1" Name="activity" Size="14" />
+                <Label Grid.Column="2" Text="Automationen" FontSize="13" VerticalOptions="Center" />
+            </Grid>
+            <Grid ColumnDefinitions="2,30,*" HeightRequest="30" BackgroundColor="Transparent">
+                <Grid.Triggers><DataTrigger TargetType="Grid" Binding="{Binding IsStandup}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource CardHover}" /></DataTrigger></Grid.Triggers>
+                <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="standup" /></Grid.GestureRecognizers>
+                <BoxView Color="{StaticResource Accent}" IsVisible="{Binding IsStandup}" />
+                <c:Icon Grid.Column="1" Name="sun" Size="14" />
+                <Label Grid.Column="2" Text="Daily Standup" FontSize="13" VerticalOptions="Center" />
+            </Grid>
+            <Grid ColumnDefinitions="2,30,*" HeightRequest="30" BackgroundColor="Transparent">
+                <Grid.Triggers><DataTrigger TargetType="Grid" Binding="{Binding IsChangelog}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource CardHover}" /></DataTrigger></Grid.Triggers>
+                <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="changelog" /></Grid.GestureRecognizers>
+                <BoxView Color="{StaticResource Accent}" IsVisible="{Binding IsChangelog}" />
+                <c:Icon Grid.Column="1" Name="package" Size="14" />
+                <Label Grid.Column="2" Text="Release Notes" FontSize="13" VerticalOptions="Center" />
+            </Grid>
+            <Grid ColumnDefinitions="2,30,*" HeightRequest="30" BackgroundColor="Transparent">
+                <Grid.Triggers><DataTrigger TargetType="Grid" Binding="{Binding IsPrompts}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource CardHover}" /></DataTrigger></Grid.Triggers>
+                <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="prompts" /></Grid.GestureRecognizers>
+                <BoxView Color="{StaticResource Accent}" IsVisible="{Binding IsPrompts}" />
+                <c:Icon Grid.Column="1" Name="book" Size="14" />
+                <Label Grid.Column="2" Text="Prompt-Bibliothek" FontSize="13" VerticalOptions="Center" />
+            </Grid>
+
+            <Label Text="KI" Style="{StaticResource Caption}" Margin="10,24,0,6" />
+            <Border Style="{StaticResource PanelBox}" Padding="3" StrokeShape="Rectangle" HorizontalOptions="Start" Margin="6,0">
+                <HorizontalStackLayout Spacing="2">
+                    <Button Text="Claude" Style="{StaticResource Seg}" Command="{Binding SetProviderCommand}" CommandParameter="Claude">
+                        <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsClaude}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                    </Button>
+                    <Button Text="Copilot" Style="{StaticResource Seg}" Command="{Binding SetProviderCommand}" CommandParameter="Copilot">
+                        <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsCopilot}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                    </Button>
+                </HorizontalStackLayout>
+            </Border>
+        </VerticalStackLayout>
+
+        <!-- ================= Review ================= -->
+        <Grid Grid.Column="1" IsVisible="{Binding IsReview}" ColumnDefinitions="340,*">
+            <ScrollView Padding="20,24" BackgroundColor="{StaticResource Bg}">
+                <VerticalStackLayout Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="MERGE REQUESTS" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <c:IconButton Icon="refresh" Grid.Column="1" Command="{Binding LoadMrsCommand}" CommandParameter="{x:Null}" />
+                    </Grid>
+                    <Label Text="Keine offenen MRs (oder GitLab nicht konfiguriert)." Style="{StaticResource Sub}" IsVisible="{Binding MergeRequests.Count, Converter={StaticResource None}}" />
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding MergeRequests}" Spacing="6">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource PanelBox}" Padding="12,8">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickMrCommand}" CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                    <VerticalStackLayout Spacing="2">
+                                        <Label Text="{Binding Title}" FontSize="12.5" FontAttributes="Bold" LineBreakMode="TailTruncation" />
+                                        <Label FontSize="11" TextColor="{StaticResource Muted}">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="{Binding Iid, StringFormat='!{0} · '}" />
+                                                    <Span Text="{Binding Author}" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                    <Label Text="LOKALE ÄNDERUNGEN" Style="{StaticResource Caption}" Margin="0,14,0,0" />
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Projects}" Spacing="6">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource PanelBox}" Padding="12,8">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickLocalCommand}" CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                    <HorizontalStackLayout Spacing="8">
+                                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="0" Color="{Binding Color, Converter={StaticResource Hex}}" VerticalOptions="Center" />
+                                        <Label Text="{Binding Name}" FontSize="12.5" />
+                                    </HorizontalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView Grid.Column="1" Padding="28,24">
+                <VerticalStackLayout Spacing="16" MaximumWidthRequest="1000">
+                    <Label Text="KI Code-Review" Style="{StaticResource H1}" />
+                    <Label Text="{Binding ReviewSource, TargetNullValue='Wähle links einen Merge Request oder ein Projekt.', FallbackValue='Wähle links einen Merge Request oder ein Projekt.'}" Style="{StaticResource Sub}" />
+                    <HorizontalStackLayout Spacing="10">
+                        <Button Text="Review starten" Style="{StaticResource Primary}" Command="{Binding ReviewCommand}" />
+                        <Button Text="Im MR kommentieren" Command="{Binding PostReviewCommand}" IsVisible="{Binding CanPost}" />
+                        <Button Text="Alles in Session fixen" Command="{Binding FixInSessionCommand}" CommandParameter="{x:Null}" IsVisible="{Binding HasReview}" />
+                    </HorizontalStackLayout>
+
+                    <VerticalStackLayout IsVisible="{Binding Reviewing}" Spacing="10" HorizontalOptions="Center" Margin="0,30">
+                        <c:AiOrb WidthRequest="160" HeightRequest="160" IsActive="{Binding Reviewing}" />
+                        <Label Text="{Binding ReviewStatus}" TextColor="{StaticResource Cyan}" HorizontalOptions="Center" />
+                    </VerticalStackLayout>
+
+                    <Border Style="{StaticResource CardBox}" IsVisible="{Binding HasReview}" Background="{StaticResource HeroGradient}">
+                        <VerticalStackLayout Spacing="8">
+                            <HorizontalStackLayout Spacing="10">
+                                <Border Style="{StaticResource Pill}" BackgroundColor="{Binding ReviewVerdict, Converter={StaticResource StatusSoft}}">
+                                    <Label Text="{Binding ReviewVerdict}" FontAttributes="Bold" FontSize="11" TextColor="{Binding ReviewVerdict, Converter={StaticResource StatusColor}}" />
+                                </Border>
+                                <Label Text="{Binding Findings.Count, StringFormat='{0} Findings'}" Style="{StaticResource H3}" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Label Text="{Binding ReviewSummary}" LineBreakMode="WordWrap" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Findings}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardBox}" Padding="0">
+                                    <Grid ColumnDefinitions="4,*">
+                                        <BoxView Color="{Binding Severity, Converter={StaticResource SeverityColor}}" />
+                                        <VerticalStackLayout Grid.Column="1" Padding="16,12" Spacing="6">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                <Label Text="{Binding Severity}" FontSize="11" FontAttributes="Bold" TextTransform="Uppercase" TextColor="{Binding Severity, Converter={StaticResource SeverityColor}}" />
+                                                <Label Grid.Column="1" Text="{Binding Title}" FontAttributes="Bold" />
+                                                <Button Grid.Column="2" Text="Fixen" Style="{StaticResource Chip}"
+                                                        Command="{Binding Source={x:Reference Root}, Path=BindingContext.FixInSessionCommand}" CommandParameter="{Binding .}" />
+                                            </Grid>
+                                            <Label Style="{StaticResource MonoLabel}" FontSize="11">
+                                                <Label.FormattedText>
+                                                    <FormattedString>
+                                                        <Span Text="{Binding File}" />
+                                                        <Span Text=":" />
+                                                        <Span Text="{Binding Line}" />
+                                                    </FormattedString>
+                                                </Label.FormattedText>
+                                            </Label>
+                                            <Label Text="{Binding Detail}" LineBreakMode="WordWrap" TextColor="{StaticResource Text2}" />
+                                            <Label Text="{Binding Suggestion, StringFormat='{0}'}" LineBreakMode="WordWrap" TextColor="{StaticResource Cyan}" FontSize="12.5"
+                                                   IsVisible="{Binding Suggestion, Converter={StaticResource HasText}}" />
+                                        </VerticalStackLayout>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </ScrollView>
+        </Grid>
+
+        <!-- ================= Automationen ================= -->
+        <Grid Grid.Column="1" IsVisible="{Binding IsAutomations}" ColumnDefinitions="*,400">
+            <ScrollView Padding="28,24">
+                <VerticalStackLayout Spacing="14">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout>
+                            <Label Text="Automationen" Style="{StaticResource H1}" />
+                            <Label Text="Copit arbeitet im Hintergrund: Erinnerungen, Buchungs-Checks, Pipeline-Wächter und geplante KI-Prompts." Style="{StaticResource Sub}" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1" Text="Automation" Style="{StaticResource Primary}" Command="{Binding NewAutomationCommand}" VerticalOptions="Center" />
+                    </Grid>
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Automations}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardBox}" Padding="16,12">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="12">
+                                        <Switch IsToggled="{Binding Enabled}" VerticalOptions="Center" />
+                                        <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}" FontAttributes="Bold" />
+                                            <Label FontSize="11.5" TextColor="{StaticResource Muted}">
+                                                <Label.FormattedText>
+                                                    <FormattedString>
+                                                        <Span Text="{Binding KindText}" TextColor="{StaticResource Text2}" />
+                                                        <Span Text="·  " />
+                                                        <Span Text="{Binding Schedule}" />
+                                                        <Span Text="·  " />
+                                                        <Span Text="{Binding LastRunText}" />
+                                                    </FormattedString>
+                                                </Label.FormattedText>
+                                            </Label>
+                                        </VerticalStackLayout>
+                                        <c:PulseDot Grid.Column="2" Color="{StaticResource Cyan}" Pulsing="{Binding Running}" IsVisible="{Binding Running}" />
+                                        <Button Grid.Column="3" Text="Jetzt" Style="{StaticResource Chip}" VerticalOptions="Center"
+                                                Command="{Binding Source={x:Reference Root}, Path=BindingContext.RunNowCommand}" CommandParameter="{Binding .}" />
+                                        <c:IconButton Icon="pencil" Grid.Column="4" Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditAutomationCommand}" CommandParameter="{Binding .}" />
+                                        <c:IconButton Icon="trash" Grid.Column="5" Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteAutomationCommand}" CommandParameter="{Binding .}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <Grid Grid.Column="1" BackgroundColor="{StaticResource Bg2}" RowDefinitions="Auto,*" Padding="18,24">
+                <Label Text="LETZTE LÄUFE" Style="{StaticResource Caption}" Margin="0,0,0,10" />
+                <ScrollView Grid.Row="1">
+                    <VerticalStackLayout Spacing="6">
+                        <Border Style="{StaticResource CardBox}" IsVisible="{Binding SelectedRun, Converter={StaticResource NotNull}}" Margin="0,0,0,10">
+                            <VerticalStackLayout Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <Label Text="{Binding SelectedRun.AutomationName}" Style="{StaticResource H3}" />
+                                    <c:IconButton Icon="copy" Grid.Column="1" Command="{Binding CopyCommand}" CommandParameter="{Binding SelectedRun.Output}" />
+                                    <c:IconButton Icon="x" Grid.Column="2" Command="{Binding CloseRunCommand}" />
+                                </Grid>
+                                <c:MarkdownView Text="{Binding SelectedRun.Output}" />
+                            </VerticalStackLayout>
+                        </Border>
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Runs}" Spacing="4">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource PanelBox}" Padding="10,7">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.ShowRunCommand}" CommandParameter="{Binding .}" />
+                                        </Border.GestureRecognizers>
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                            <Grid><c:Icon Name="check" Color="{StaticResource Green}" Size="13" IsVisible="{Binding Success}" /><c:Icon Name="x" Color="{StaticResource Red}" Size="13" IsVisible="{Binding Success, Converter={StaticResource Not}}" /></Grid>
+                                            <Label Grid.Column="1" Text="{Binding AutomationName}" FontSize="12" LineBreakMode="TailTruncation" />
+                                            <Label Grid.Column="2" Text="{Binding At, StringFormat='{0:dd.MM. HH:mm}'}" FontSize="11" TextColor="{StaticResource Muted}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </ScrollView>
+            </Grid>
+        </Grid>
+
+        <!-- ================= Standup ================= -->
+        <ScrollView Grid.Column="1" IsVisible="{Binding IsStandup}" Padding="28,24">
+            <VerticalStackLayout Spacing="16" MaximumWidthRequest="900" HorizontalOptions="Start">
+                <Label Text="Daily Standup" Style="{StaticResource H1}" />
+                <Label Text="Copit fasst deinen letzten Arbeitstag (Worklogs, Commits, GitLab, Notizen) und deine Tickets in Arbeit zusammen." Style="{StaticResource Sub}" />
+                <HorizontalStackLayout Spacing="10">
+                    <Button Text="Standup erstellen" Style="{StaticResource Primary}" Command="{Binding StandupCommand}" />
+                    <Button Text="Kopieren" Command="{Binding CopyCommand}" CommandParameter="{Binding StandupText}" IsVisible="{Binding StandupText, Converter={StaticResource HasText}}" />
+                </HorizontalStackLayout>
+                <VerticalStackLayout IsVisible="{Binding StandupBusy}" HorizontalOptions="Center" Spacing="8" Margin="0,20">
+                    <c:AiOrb WidthRequest="140" HeightRequest="140" IsActive="{Binding StandupBusy}" />
+                    <Label Text="Sammle Aktivitäten von gestern…" TextColor="{StaticResource Cyan}" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+                <Border Style="{StaticResource CardBox}" IsVisible="{Binding StandupText, Converter={StaticResource HasText}}" Padding="22">
+                    <c:MarkdownView Text="{Binding StandupText}" />
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- ================= Release Notes ================= -->
+        <ScrollView Grid.Column="1" IsVisible="{Binding IsChangelog}" Padding="28,24">
+            <VerticalStackLayout Spacing="16" MaximumWidthRequest="900" HorizontalOptions="Start">
+                <Label Text="Release Notes" Style="{StaticResource H1}" />
+                <Label Text="Aus Commits seit einem Tag verständliche Release Notes für PO &amp; Kunden erzeugen." Style="{StaticResource Sub}" />
+                <Label Text="PROJEKT" Style="{StaticResource Caption}" />
+                <FlexLayout BindableLayout.ItemsSource="{Binding Projects}" Wrap="Wrap">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate>
+                            <Button Text="{Binding Name}" Style="{StaticResource Chip}" Margin="0,0,6,6"
+                                    Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickChangelogProjectCommand}" CommandParameter="{Binding .}" />
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </FlexLayout>
+                <Label Text="{Binding ChangelogProject.Name, StringFormat='Gewählt: {0}'}" TextColor="{StaticResource Cyan}" IsVisible="{Binding ChangelogProject, Converter={StaticResource NotNull}}" />
+                <Label Text="SEIT TAG / COMMIT" Style="{StaticResource Caption}" />
+                <FlexLayout BindableLayout.ItemsSource="{Binding Tags}" Wrap="Wrap">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate>
+                            <Button Text="{Binding .}" Style="{StaticResource Chip}" Margin="0,0,6,6" FontFamily="{StaticResource Mono}"
+                                    Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickTagCommand}" CommandParameter="{Binding .}" />
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </FlexLayout>
+                <Entry Text="{Binding ChangelogFrom}" Placeholder="Tag, Branch oder Commit (leer = alle)" WidthRequest="360" HorizontalOptions="Start" />
+                <HorizontalStackLayout Spacing="10">
+                    <Button Text="Release Notes erzeugen" Style="{StaticResource Primary}" Command="{Binding ChangelogCommand}" />
+                    <Button Text="Kopieren" Command="{Binding CopyCommand}" CommandParameter="{Binding ChangelogText}" IsVisible="{Binding ChangelogText, Converter={StaticResource HasText}}" />
+                </HorizontalStackLayout>
+                <VerticalStackLayout IsVisible="{Binding ChangelogBusy}" HorizontalOptions="Center" Spacing="8">
+                    <c:AiOrb WidthRequest="120" HeightRequest="120" IsActive="{Binding ChangelogBusy}" />
+                </VerticalStackLayout>
+                <Border Style="{StaticResource CardBox}" IsVisible="{Binding ChangelogText, Converter={StaticResource HasText}}" Padding="22">
+                    <c:MarkdownView Text="{Binding ChangelogText}" />
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- ================= Prompt-Bibliothek ================= -->
+        <ScrollView Grid.Column="1" IsVisible="{Binding IsPrompts}" Padding="28,24">
+            <VerticalStackLayout Spacing="14" MaximumWidthRequest="900" HorizontalOptions="Start">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                    <VerticalStackLayout>
+                        <Label Text="Prompt-Bibliothek" Style="{StaticResource H1}" />
+                        <Label Text="Wiederverwendbare Prompts – im Chat über das -Symbol einfügen." Style="{StaticResource Sub}" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1" Text="Prompt" Command="{Binding AddSnippetCommand}" VerticalOptions="Center" />
+                    <Button Grid.Column="2" Text="Speichern" Style="{StaticResource Primary}" Command="{Binding SaveSnippetsCommand}" VerticalOptions="Center" />
+                </Grid>
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding Snippets}" Spacing="10">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource CardBox}" Padding="14,10" WidthRequest="860">
+                                <VerticalStackLayout Spacing="6">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Entry Text="{Binding Title}" FontAttributes="Bold" BackgroundColor="Transparent" />
+                                        <c:IconButton Icon="trash" Grid.Column="1" Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteSnippetCommand}" CommandParameter="{Binding .}" />
+                                    </Grid>
+                                    <Editor Text="{Binding Text}" AutoSize="TextChanges" MinimumHeightRequest="60" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- ================= Automation-Editor ================= -->
+        <Grid Grid.ColumnSpan="2" IsVisible="{Binding ShowEditor}" BackgroundColor="#D0100C0A">
+            <Border Style="{StaticResource CardBox}" WidthRequest="560" VerticalOptions="Center" HorizontalOptions="Center" Padding="24">
+                <VerticalStackLayout Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Automation" Style="{StaticResource H2}" />
+                        <c:IconButton Icon="x" Grid.Column="1" Command="{Binding CloseEditorCommand}" />
+                    </Grid>
+                    <Label Text="NAME" Style="{StaticResource Caption}" />
+                    <Entry Text="{Binding EdName}" Placeholder="z.B. Morgens offene MRs zusammenfassen" />
+                    <Label Text="ART" Style="{StaticResource Caption}" />
+                    <FlexLayout BindableLayout.ItemsSource="{Binding Kinds}" Wrap="Wrap">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Button Text="{Binding .}" Style="{StaticResource Chip}" Margin="0,0,6,6"
+                                        Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickKindCommand}" CommandParameter="{Binding .}" />
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </FlexLayout>
+                    <Label Text="{Binding EdKind, StringFormat='Gewählt: {0}'}" TextColor="{StaticResource Cyan}" FontSize="12" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <VerticalStackLayout Spacing="4" IsVisible="{Binding EdIsWatch, Converter={StaticResource Not}}">
+                            <Label Text="UHRZEIT (MO–FR)" Style="{StaticResource Caption}" />
+                            <Entry Text="{Binding EdTime}" Placeholder="HH:mm" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4" IsVisible="{Binding EdIsWatch}">
+                            <Label Text="INTERVALL (MIN)" Style="{StaticResource Caption}" />
+                            <Entry Text="{Binding EdInterval}" Keyboard="Numeric" />
+                        </VerticalStackLayout>
+                    </Grid>
+                    <VerticalStackLayout Spacing="4" IsVisible="{Binding EdNeedsPrompt}">
+                        <Label Text="PROMPT / NACHRICHT" Style="{StaticResource Caption}" />
+                        <Editor Text="{Binding EdPrompt}" AutoSize="TextChanges" MinimumHeightRequest="80"
+                                Placeholder="z.B. Prüfe die TODOs im Code und fasse die wichtigsten 5 zusammen" />
+                        <Label Text="PROJEKT (ARBEITSORDNER FÜR KI-PROMPTS)" Style="{StaticResource Caption}" Margin="0,6,0,0" />
+                        <FlexLayout BindableLayout.ItemsSource="{Binding Projects}" Wrap="Wrap">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Text="{Binding Name}" Style="{StaticResource Chip}" Margin="0,0,6,6"
+                                            Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickEdProjectCommand}" CommandParameter="{Binding .}" />
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </FlexLayout>
+                        <Label Text="{Binding EdProject.Name, StringFormat='Projekt: {0}'}" TextColor="{StaticResource Cyan}" FontSize="12" />
+                    </VerticalStackLayout>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10" Margin="0,6,0,0">
+                        <Button Text="Abbrechen" Command="{Binding CloseEditorCommand}" />
+                        <Button Grid.Column="1" Text="Speichern" Style="{StaticResource Primary}" Command="{Binding SaveAutomationCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentView>
+

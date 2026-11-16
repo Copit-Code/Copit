@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:c="clr-namespace:Copit.Controls"
+             x:Class="Copit.Views.GitOverlays"
+             InputTransparent="True" CascadeInputTransparent="False">
+    <Grid InputTransparent="True" CascadeInputTransparent="False">
+        <!-- Diff -->
+        <Grid IsVisible="{Binding ShowDiff}" BackgroundColor="#D0100C0A" Padding="60,40">
+            <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding CloseDiffCommand}" /></Grid.GestureRecognizers>
+            <Border Style="{StaticResource CardBox}" Padding="0" MaximumWidthRequest="1200">
+                <Border.GestureRecognizers><TapGestureRecognizer /></Border.GestureRecognizers>
+                <Grid RowDefinitions="Auto,*">
+                    <Grid Padding="16,10" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" BackgroundColor="{StaticResource Panel}">
+                        <Label Text="{Binding DiffTitle}" Style="{StaticResource H3}" FontFamily="{StaticResource Mono}" VerticalOptions="Center" LineBreakMode="MiddleTruncation" />
+                        <Button Grid.Column="1" Text="Verwerfen" Style="{StaticResource Danger}" Command="{Binding DiscardCommand}" IsVisible="{Binding DiffChange, Converter={StaticResource NotNull}}" />
+                        <c:IconButton Icon="x" Grid.Column="2" Command="{Binding CloseDiffCommand}" />
+                    </Grid>
+                    <c:DiffView Grid.Row="1" Diff="{Binding DiffText}" Margin="16,10" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Job-Log -->
+        <Grid IsVisible="{Binding ShowLog}" BackgroundColor="#D0100C0A" Padding="60,40">
+            <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding CloseLogCommand}" /></Grid.GestureRecognizers>
+            <Border Style="{StaticResource CardBox}" Padding="0" MaximumWidthRequest="1200">
+                <Border.GestureRecognizers><TapGestureRecognizer /></Border.GestureRecognizers>
+                <Grid RowDefinitions="Auto,Auto,*">
+                    <Grid Padding="16,10" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8" BackgroundColor="{StaticResource Panel}">
+                        <c:Icon Name="{Binding LogJob.Status, Converter={StaticResource StatusIcon}}" Color="{Binding LogJob.Status, Converter={StaticResource StatusColor}}" Size="14" />
+                        <Label Grid.Column="1" Text="{Binding LogTitle}" Style="{StaticResource H3}" VerticalOptions="Center" />
+                        <Button Grid.Column="2" Text="Erklären" Command="{Binding ExplainLogCommand}" />
+                        <Button Grid.Column="3" Text="In Session fixen" Style="{StaticResource Primary}" Command="{Binding FixInSessionCommand}" />
+                        <c:IconButton Icon="external" Grid.Column="4" Command="{Binding OpenJobCommand}" CommandParameter="{Binding LogJob}" />
+                        <c:IconButton Icon="x" Grid.Column="5" Command="{Binding CloseLogCommand}" />
+                    </Grid>
+                    <VerticalStackLayout Grid.Row="1" Padding="16,10,16,0" Spacing="6">
+                        <HorizontalStackLayout Spacing="8" IsVisible="{Binding Explaining}">
+                            <c:AiOrb WidthRequest="28" HeightRequest="28" IsActive="True" />
+                            <Label Text="KI analysiert das Log…" TextColor="{StaticResource Cyan}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                        <Border Style="{StaticResource PanelBox}" IsVisible="{Binding Explanation, Converter={StaticResource HasText}}" BackgroundColor="#181412" Stroke="#3A322B">
+                            <c:MarkdownView Text="{Binding Explanation}" />
+                        </Border>
+                    </VerticalStackLayout>
+                    <ScrollView Grid.Row="2" Margin="16,10" x:Name="LogScroll">
+                        <Label Text="{Binding LogText}" Style="{StaticResource MonoLabel}" FontSize="11.5" LineBreakMode="CharacterWrap" />
+                    </ScrollView>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentView>
+

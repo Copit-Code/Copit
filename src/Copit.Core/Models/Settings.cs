@@ -1,0 +1,87 @@
+namespace Copit.Core.Models;
+
+public enum AiProvider { Claude, Copilot }
+
+public enum JiraAuthMode { BearerToken, Basic }
+
+/// <summary>Permission modes for an agent session. Mapped to the CLI flags of Claude / Copilot.</summary>
+public enum AgentMode
+{
+    /// <summary>Nur Fragen beantworten, keine Änderungen.</summary>
+    Ask,
+    /// <summary>Plant zuerst und zeigt den Plan (Claude: plan mode).</summary>
+    Plan,
+    /// <summary>Darf Dateien ändern (Claude: acceptEdits).</summary>
+    Edit,
+    /// <summary>Darf alles inkl. Shell-Befehle (Claude: bypassPermissions / Copilot: --allow-all-tools).</summary>
+    Auto
+}
+
+public class AppSettings
+{
+    public JiraSettings Jira { get; set; } = new();
+    public GitLabSettings GitLab { get; set; } = new();
+    public AiSettings Ai { get; set; } = new();
+    public TimeSettings Time { get; set; } = new();
+    public bool OnboardingDone { get; set; }
+}
+
+public class JiraSettings
+{
+    public string BaseUrl { get; set; } = "";
+    public JiraAuthMode AuthMode { get; set; } = JiraAuthMode.BearerToken;
+    /// <summary>Nur für Basic-Auth.</summary>
+    public string Username { get; set; } = "";
+    /// <summary>Custom field das den Account trägt (z.B. Tempo "customfield_10100").</summary>
+    public string AccountFieldId { get; set; } = "";
+    /// <summary>Epic-Link Feld (Jira Server/DC), z.B. "customfield_10101". Leer = parent verwenden.</summary>
+    public string EpicLinkFieldId { get; set; } = "";
+    /// <summary>Worklogs über Tempo Timesheets buchen (inkl. Account-Attribut).</summary>
+    public bool UseTempo { get; set; }
+    /// <summary>Key des Tempo Work-Attributes für den Account.</summary>
+    public string TempoAccountAttributeKey { get; set; } = "_Account_";
+    public string DefaultIssueType { get; set; } = "Task";
+    public bool IgnoreCertificateErrors { get; set; }
+}
+
+public class GitLabSettings
+{
+    public string BaseUrl { get; set; } = "";
+    public bool IgnoreCertificateErrors { get; set; }
+}
+
+public class AiSettings
+{
+    public AiProvider DefaultProvider { get; set; } = AiProvider.Claude;
+    public string ClaudePath { get; set; } = "";
+    public string CopilotPath { get; set; } = "";
+    public string ClaudeModel { get; set; } = "";
+    public string CopilotModel { get; set; } = "";
+    public string ClaudeExtraArgs { get; set; } = "";
+    public string CopilotExtraArgs { get; set; } = "";
+    /// <summary>Wird jeder Session als zusätzliche System-Anweisung mitgegeben.</summary>
+    public string GlobalInstructions { get; set; } = "Antworte auf Deutsch. Halte Antworten kompakt.";
+}
+
+public class TimeSettings
+{
+    public double MinHoursPerDay { get; set; } = 8;
+    public List<DayOfWeek> WorkDays { get; set; } =
+        [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday];
+    public string DayStart { get; set; } = "08:00";
+    /// <summary>Rundung der Vorschläge in Minuten.</summary>
+    public int RoundingMinutes { get; set; } = 15;
+    public List<RuleSet> RuleSets { get; set; } =
+    [
+        new() { Name = "Buchungstexte", Text = "Buchungstexte sind kurz, fachlich und im Präteritum, z.B. 'Login-Fehler im Token-Refresh analysiert und behoben'. Keine Ticketnummern im Text.", Enabled = true },
+        new() { Name = "Keine Mini-Buchungen", Text = "Buche nie weniger als 0,25h auf ein Ticket. Fasse Kleinkram auf dem passendsten Ticket zusammen.", Enabled = true }
+    ];
+}
+
+public class RuleSet
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = "";
+    public string Text { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+}

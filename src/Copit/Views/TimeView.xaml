@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:c="clr-namespace:Copit.Controls"
+             x:Class="Copit.Views.TimeView"
+             x:Name="Root">
+    <ContentView.Resources>
+        <Style x:Key="Seg" TargetType="Button" BasedOn="{StaticResource Ghost}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="12,3" />
+            <Setter Property="HeightRequest" Value="28" />
+            <Setter Property="MinimumHeightRequest" Value="28" />
+            <Setter Property="CornerRadius" Value="7" />
+        </Style>
+    </ContentView.Resources>
+
+    <Grid ColumnDefinitions="*,460">
+
+        <!-- ================= Kalender ================= -->
+        <Grid Padding="28,22,20,20" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="ZEITBUCHUNG" Style="{StaticResource Caption}" />
+                    <Label Text="{Binding MonthTitle}" Style="{StaticResource H1}" />
+                </VerticalStackLayout>
+                <HorizontalStackLayout Grid.Column="1" Spacing="14" VerticalOptions="Center">
+                    <Grid WidthRequest="54" HeightRequest="54">
+                        <c:RingView Progress="{Binding MonthFraction}" Color="{StaticResource Cyan}" Thickness="3" />
+                        <c:Icon Name="calendar" HorizontalOptions="Center" Size="14" />
+                    </Grid>
+                    <VerticalStackLayout VerticalOptions="Center" Spacing="2">
+                        <Label Text="{Binding MonthStats}" Style="{StaticResource H3}" />
+                        <Label Text="{Binding MonthMissing}" Style="{StaticResource Sub}" />
+                    </VerticalStackLayout>
+                </HorizontalStackLayout>
+            </Grid>
+
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                <c:IconButton Icon="chevron-left" Command="{Binding PrevMonthCommand}" />
+                <Button Grid.Column="1" Text="Heute" Style="{StaticResource Chip}" Command="{Binding TodayCommand}" />
+                <c:IconButton Icon="chevron-right" Grid.Column="2" Command="{Binding NextMonthCommand}" />
+                <ActivityIndicator Grid.Column="3" IsRunning="{Binding LoadingMonth}" IsVisible="{Binding LoadingMonth}" HorizontalOptions="Start" WidthRequest="18" HeightRequest="18" Margin="10,0" />
+                <Button Grid.Column="5" Text="Regeln &amp; Soll" Style="{StaticResource Chip}" Command="{Binding ToggleRulesCommand}" />
+            </Grid>
+
+            <Grid Grid.Row="2" ColumnDefinitions="*,*,*,*,*,*,*">
+                <Label Text="MO" Style="{StaticResource Caption}" Margin="10,0" />
+                <Label Grid.Column="1" Text="DI" Style="{StaticResource Caption}" Margin="10,0" />
+                <Label Grid.Column="2" Text="MI" Style="{StaticResource Caption}" Margin="10,0" />
+                <Label Grid.Column="3" Text="DO" Style="{StaticResource Caption}" Margin="10,0" />
+                <Label Grid.Column="4" Text="FR" Style="{StaticResource Caption}" Margin="10,0" />
+                <Label Grid.Column="5" Text="SA" Style="{StaticResource Caption}" Margin="10,0" />
+                <Label Grid.Column="6" Text="SO" Style="{StaticResource Caption}" Margin="10,0" />
+            </Grid>
+
+            <CollectionView Grid.Row="3" ItemsSource="{Binding Days}" SelectionMode="None" ItemsLayout="VerticalGrid, 7">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Border Margin="3" Padding="10,8" HeightRequest="96" StrokeShape="Rectangle"
+                                BackgroundColor="{StaticResource Card}" Stroke="{StaticResource LineSoft}" StrokeThickness="1">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.SelectDayCommand}" CommandParameter="{Binding .}" />
+                            </Border.GestureRecognizers>
+                            <Border.Triggers>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsWorkDay}" Value="False"><Setter Property="BackgroundColor" Value="{StaticResource Panel}" /></DataTrigger>
+                                <DataTrigger TargetType="Border" Binding="{Binding InMonth}" Value="False"><Setter Property="Opacity" Value="0.35" /></DataTrigger>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsToday}" Value="True"><Setter Property="Stroke" Value="{StaticResource Cyan}" /></DataTrigger>
+                                <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                    <Setter Property="Stroke" Value="{StaticResource Accent}" />
+                                    <Setter Property="StrokeThickness" Value="2" />
+                                    <Setter Property="BackgroundColor" Value="#28211C" />
+                                </DataTrigger>
+                            </Border.Triggers>
+                            <Grid RowDefinitions="Auto,*,Auto,Auto" RowSpacing="3">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+                                    <Label Text="{Binding Day}" FontSize="15" FontAttributes="Bold" />
+                                    <c:Icon Name="note" Grid.Column="1" Color="{StaticResource Amber}" IsVisible="{Binding HasNote}" ToolTipProperties.Text="Tagesnotiz" Size="13" />
+                                    <Label Grid.Column="2" Text="" FontSize="10" TextColor="{StaticResource Accent}" IsVisible="{Binding HasDraft}" ToolTipProperties.Text="Offene Vorschläge" />
+                                </Grid>
+                                <Label Grid.Row="2" Text="{Binding HoursText}" FontSize="13" FontAttributes="Bold" TextColor="{Binding StateColor}" />
+                                <ProgressBar Grid.Row="3" Progress="{Binding Fraction}" ProgressColor="{Binding StateColor}" HeightRequest="4" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </Grid>
+
+        <!-- ================= Regeln (Drawer) ================= -->
+        <Border IsVisible="{Binding ShowRules}" Style="{StaticResource CardBox}" HorizontalOptions="End" VerticalOptions="Fill"
+                WidthRequest="440" Margin="0,80,20,20" ZIndex="5">
+            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+                <Grid ColumnDefinitions="*,Auto">
+                    <Label Text="Regeln &amp; Soll-Stunden" Style="{StaticResource H2}" />
+                    <c:IconButton Icon="x" Grid.Column="1" Command="{Binding ToggleRulesCommand}" />
+                </Grid>
+                <Grid Grid.Row="1" ColumnDefinitions="*,100" ColumnSpacing="10">
+                    <Label Text="Mindeststunden pro Arbeitstag" VerticalOptions="Center" />
+                    <Entry Grid.Column="1" Text="{Binding MinHours}" Keyboard="Numeric" HorizontalTextAlignment="End" />
+                </Grid>
+                <ScrollView Grid.Row="2">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Rules}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource PanelBox}">
+                                    <VerticalStackLayout Spacing="6">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                                            <CheckBox IsChecked="{Binding Enabled}" />
+                                            <Entry Grid.Column="1" Text="{Binding Name}" FontAttributes="Bold" BackgroundColor="Transparent" />
+                                            <c:IconButton Icon="trash" Grid.Column="2" Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteRuleCommand}" CommandParameter="{Binding .}" />
+                                        </Grid>
+                                        <Editor Text="{Binding Text}" AutoSize="TextChanges" MinimumHeightRequest="60"
+                                                Placeholder="z.B. Meetings immer auf ORG-1 buchen · Max. 6h pro Ticket · Code-Reviews auf das Review-Ticket" />
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </ScrollView>
+                <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <Button Text="Regel" Command="{Binding AddRuleCommand}" />
+                    <Button Grid.Column="1" Text="Speichern" Style="{StaticResource Primary}" Command="{Binding SaveRulesCommand}" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- ================= Tages-Panel ================= -->
+        <Grid Grid.Column="1" BackgroundColor="{StaticResource Bg2}">
+            <ScrollView Padding="22,22">
+                <VerticalStackLayout Spacing="14" IsVisible="{Binding HasSelection}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="{Binding SelectedTitle}" Style="{StaticResource H2}" />
+                            <Label Text="{Binding BookedText}" Style="{StaticResource Sub}" />
+                        </VerticalStackLayout>
+                        <Grid Grid.Column="1" WidthRequest="46" HeightRequest="46">
+                            <c:RingView Progress="{Binding Selected.Fraction}" Color="{Binding Selected.StateColor}" Thickness="3" />
+                        </Grid>
+                    </Grid>
+
+                    <!-- Bereits gebucht -->
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Worklogs}" Spacing="4">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                    <c:Icon Name="check" Color="{StaticResource Green}" Size="14" />
+                                    <Label Grid.Column="1" FontSize="12" LineBreakMode="TailTruncation">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="{Binding IssueKey}" FontAttributes="Bold" />
+                                                <Span Text="" />
+                                                <Span Text="{Binding Comment}" TextColor="{StaticResource Text2}" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                    <Label Grid.Column="2" Text="{Binding Hours, StringFormat='{0:0.##}h'}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource Green}" />
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                    <!-- Tagesnotiz -->
+                    <Border Style="{StaticResource CardBox}" Padding="14,10">
+                        <VerticalStackLayout Spacing="6">
+                            <HorizontalStackLayout Spacing="6">
+                                <c:Icon Name="note" Color="{StaticResource Amber}" Size="14" />
+                                <Label Text="TAGESNOTIZ" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Editor Text="{Binding DayNote}" AutoSize="TextChanges" MinimumHeightRequest="64" BackgroundColor="Transparent"
+                                    Placeholder="Was war heute? z.B. 1,5h Sprint-Planning, Kundentermin zu ABC-42, Bugfix Login…" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Stunden -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="SOLL HEUTE" Style="{StaticResource Caption}" />
+                            <Entry Text="{Binding TargetText}" Keyboard="Numeric" Unfocused="OnTargetUnfocused" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="4">
+                            <Label Text="JETZT BUCHEN (H)" Style="{StaticResource Caption}" />
+                            <Entry Text="{Binding HoursToBook}" Keyboard="Numeric" FontAttributes="Bold" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <!-- KI -->
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Border Style="{StaticResource PanelBox}" Padding="3" StrokeShape="Rectangle">
+                            <HorizontalStackLayout Spacing="2">
+                                <Button Text="Claude" Style="{StaticResource Seg}" Command="{Binding SetProviderCommand}" CommandParameter="Claude">
+                                    <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsClaude}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                                </Button>
+                                <Button Text="Copilot" Style="{StaticResource Seg}" Command="{Binding SetProviderCommand}" CommandParameter="Copilot">
+                                    <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsCopilot}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                                </Button>
+                            </HorizontalStackLayout>
+                        </Border>
+                        <Button Grid.Column="1" Text="Ohne KI vorschlagen" Style="{StaticResource Ghost}" HorizontalOptions="End" Command="{Binding HeuristicCommand}" />
+                    </Grid>
+                    <Button Text="Analysieren &amp; Buchungen vorschlagen" Style="{StaticResource Primary}" HeightRequest="44" FontSize="14"
+                            Command="{Binding AnalyzeCommand}" IsVisible="{Binding IsWorking, Converter={StaticResource Not}}" />
+
+                    <Label Text="{Binding Error}" TextColor="{StaticResource Red}" IsVisible="{Binding Error, Converter={StaticResource HasText}}" />
+
+                    <!-- Working -->
+                    <Border Style="{StaticResource CardBox}" IsVisible="{Binding IsWorking}" Background="{StaticResource HeroGradient}">
+                        <VerticalStackLayout Spacing="10">
+                            <c:AiOrb WidthRequest="150" HeightRequest="150" IsActive="{Binding IsWorking}" HorizontalOptions="Center" />
+                            <Label Text="Copit recherchiert deinen Tag…" Style="{StaticResource H3}" HorizontalOptions="Center" />
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Steps}" Spacing="6">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnDefinitions="20,*" ColumnSpacing="6">
+                                            <ActivityIndicator WidthRequest="12" HeightRequest="12" IsRunning="{Binding Done, Converter={StaticResource Not}}" IsVisible="{Binding Done, Converter={StaticResource Not}}" />
+                                            <c:Icon Name="check" Color="{StaticResource Green}" IsVisible="{Binding Done}" Size="14" />
+                                            <Label Grid.Column="1" Text="{Binding Text}" FontSize="12" TextColor="{StaticResource Text2}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                            <Button Text="Abbrechen" Style="{StaticResource Ghost}" Command="{Binding CancelCommand}" HorizontalOptions="Center" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- Ergebnis -->
+                    <Border Style="{StaticResource PanelBox}" BackgroundColor="#181412" Stroke="#3A322B" IsVisible="{Binding Summary, Converter={StaticResource HasText}}">
+                        <HorizontalStackLayout Spacing="8">
+                            <Label Text="" TextColor="{StaticResource Accent}" />
+                            <Label Text="{Binding Summary}" LineBreakMode="WordWrap" MaximumWidthRequest="370" />
+                        </HorizontalStackLayout>
+                    </Border>
+
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Suggestions}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardBox}" Padding="14,12">
+                                    <Border.Triggers>
+                                        <DataTrigger TargetType="Border" Binding="{Binding Booked}" Value="True">
+                                            <Setter Property="Stroke" Value="{StaticResource Green}" />
+                                            <Setter Property="Opacity" Value="0.7" />
+                                        </DataTrigger>
+                                        <DataTrigger TargetType="Border" Binding="{Binding NeedsAccount}" Value="True">
+                                            <Setter Property="Stroke" Value="{StaticResource Amber}" />
+                                        </DataTrigger>
+                                    </Border.Triggers>
+                                    <VerticalStackLayout Spacing="8">
+                                        <Grid ColumnDefinitions="*,74,Auto" ColumnSpacing="8">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="{Binding IssueKey}" FontAttributes="Bold" TextColor="{StaticResource Cyan}">
+                                                    <Label.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenIssueCommand}" CommandParameter="{Binding IssueKey}" />
+                                                    </Label.GestureRecognizers>
+                                                </Label>
+                                                <Label Text="{Binding IssueSummary}" FontSize="12" TextColor="{StaticResource Text2}" LineBreakMode="TailTruncation" />
+                                            </VerticalStackLayout>
+                                            <Grid Grid.Column="1">
+                                                <Entry Text="{Binding Hours}" Keyboard="Numeric" HorizontalTextAlignment="End" FontAttributes="Bold" FontSize="15" Margin="0,0,14,0" />
+                                                <Label Text="h" HorizontalOptions="End" VerticalOptions="Center" TextColor="{StaticResource Muted}" />
+                                            </Grid>
+                                            <Grid Grid.Column="2">
+                                                <c:IconButton Icon="x" Command="{Binding Source={x:Reference Root}, Path=BindingContext.RemoveSuggestionCommand}" CommandParameter="{Binding .}" IsVisible="{Binding Booked, Converter={StaticResource Not}}" />
+                                                <c:Icon Name="check-circle" Color="{StaticResource Green}" IsVisible="{Binding Booked}" HorizontalOptions="Center" Size="21" />
+                                            </Grid>
+                                        </Grid>
+                                        <Editor Text="{Binding Comment}" AutoSize="TextChanges" MinimumHeightRequest="40" FontSize="12.5" Placeholder="Buchungstext" />
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <Label Text="{Binding Reason}" FontSize="11" TextColor="{StaticResource Muted}" LineBreakMode="WordWrap" />
+                                            <Border Grid.Column="1" Style="{StaticResource Pill}" BackgroundColor="{StaticResource Panel}" IsVisible="{Binding ShowAccount}">
+                                                <Border.GestureRecognizers>
+                                                    <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditAccountCommand}" CommandParameter="{Binding .}" />
+                                                </Border.GestureRecognizers>
+                                                <Label Text="{Binding AccountText}" FontSize="11" TextColor="{StaticResource Text2}">
+                                                    <Label.Triggers>
+                                                        <DataTrigger TargetType="Label" Binding="{Binding NeedsAccount}" Value="True"><Setter Property="TextColor" Value="{StaticResource Amber}" /></DataTrigger>
+                                                    </Label.Triggers>
+                                                </Label>
+                                            </Border>
+                                        </Grid>
+                                        <Label Text="{Binding Error}" TextColor="{StaticResource Red}" FontSize="11.5" IsVisible="{Binding Error, Converter={StaticResource HasText}}" />
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                    <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasSuggestions}">
+                        <Button Text="Buchung" Style="{StaticResource Chip}" Command="{Binding AddSuggestionCommand}" />
+                        <Label Grid.Column="1" Text="{Binding TotalText}" HorizontalOptions="End" VerticalOptions="Center" FontAttributes="Bold" TextColor="{StaticResource Amber}">
+                            <Label.Triggers>
+                                <DataTrigger TargetType="Label" Binding="{Binding TotalOk}" Value="True"><Setter Property="TextColor" Value="{StaticResource Green}" /></DataTrigger>
+                            </Label.Triggers>
+                        </Label>
+                    </Grid>
+                    <Grid IsVisible="{Binding HasSuggestions}">
+                        <Button Text="In Jira buchen" Style="{StaticResource Primary}" HeightRequest="46" FontSize="14"
+                                Command="{Binding BookCommand}" IsEnabled="{Binding CanBook}" />
+                        <ActivityIndicator IsRunning="{Binding IsBooking}" IsVisible="{Binding IsBooking}" Color="White" HorizontalOptions="End" Margin="0,0,16,0" WidthRequest="18" HeightRequest="18" />
+                    </Grid>
+                    <Button Text="Manuelle Buchung" Style="{StaticResource Ghost}" Command="{Binding AddSuggestionCommand}" IsVisible="{Binding HasSuggestions, Converter={StaticResource Not}}" />
+                </VerticalStackLayout>
+            </ScrollView>
+        </Grid>
+
+        <!-- ================= Konfetti ================= -->
+        <c:ConfettiView x:Name="Confetti" Grid.ColumnSpan="2" />
+
+        <!-- ================= Account-Dialog ================= -->
+        <Grid Grid.ColumnSpan="2" IsVisible="{Binding ShowAccountDialog}" BackgroundColor="#D0100C0A">
+            <Border Style="{StaticResource CardBox}" WidthRequest="480" VerticalOptions="Center" HorizontalOptions="Center" Padding="22">
+                <VerticalStackLayout Spacing="14">
+                    <HorizontalStackLayout Spacing="10">
+                        <c:Icon Name="alert" Color="{StaticResource Amber}" Size="23" />
+                        <Label Text="Account fehlt" Style="{StaticResource H2}" />
+                    </HorizontalStackLayout>
+                    <Label LineBreakMode="WordWrap">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="Das Ticket " />
+                                <Span Text="{Binding AccountFor.IssueKey}" FontAttributes="Bold" TextColor="{StaticResource Cyan}" />
+                                <Span Text="hat keinen Account hinterlegt. Auf welchen Account soll gebucht werden? Copit merkt sich deine Antwort für das nächste Mal." />
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+                    <Label Text="{Binding AccountFor.IssueSummary}" Style="{StaticResource Sub}" />
+                    <FlexLayout Wrap="Wrap" BindableLayout.ItemsSource="{Binding AccountOptions}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Button Text="{Binding .}" Style="{StaticResource Chip}" Margin="0,0,6,6"
+                                        Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickAccountCommand}" CommandParameter="{Binding .}" />
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </FlexLayout>
+                    <Entry Text="{Binding AccountInput}" Placeholder="Account-Key eingeben" />
+                    <HorizontalStackLayout Spacing="6">
+                        <CheckBox IsChecked="{Binding RememberForProject}" />
+                        <Label Text="Für alle Tickets dieses Jira-Projekts merken" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <Button Text="Abbrechen" Command="{Binding SkipAccountCommand}" />
+                        <Button Grid.Column="1" Text="Übernehmen &amp; merken" Style="{StaticResource Primary}" Command="{Binding ConfirmAccountCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
+    </Grid>
+</ContentView>
+

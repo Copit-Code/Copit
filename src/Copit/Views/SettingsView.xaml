@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:c="clr-namespace:Copit.Controls"
+             x:Class="Copit.Views.SettingsView">
+    <ContentView.Resources>
+        <Style x:Key="Field" TargetType="Label" BasedOn="{StaticResource Caption}">
+            <Setter Property="Margin" Value="0,6,0,2" />
+        </Style>
+        <Style x:Key="TestResult" TargetType="Label">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextColor" Value="{StaticResource Text2}" />
+            <Setter Property="VerticalOptions" Value="Center" />
+            <Setter Property="LineBreakMode" Value="WordWrap" />
+        </Style>
+    </ContentView.Resources>
+    <Grid RowDefinitions="*,Auto">
+        <ScrollView Padding="32,26">
+            <VerticalStackLayout Spacing="22" MaximumWidthRequest="1200" HorizontalOptions="Start">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="EINSTELLUNGEN" Style="{StaticResource Caption}" />
+                    <Label Text="Verbindungen &amp; Präferenzen" Style="{StaticResource H1}" />
+                    <Label Text="Tokens werden mit Windows DPAPI verschlüsselt und nur für deinen Benutzer lesbar gespeichert." Style="{StaticResource Sub}" />
+                </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="22" RowDefinitions="Auto,Auto" RowSpacing="22">
+                    <!-- Jira -->
+                    <Border Style="{StaticResource CardBox}" Padding="22">
+                        <VerticalStackLayout Spacing="4">
+                            <HorizontalStackLayout Spacing="10">
+                                <c:Icon Name="ticket" Color="{StaticResource Accent}" Size="21" />
+                                <Label Text="Jira (intern gehostet)" Style="{StaticResource H2}" />
+                            </HorizontalStackLayout>
+                            <Label Text="URL" Style="{StaticResource Field}" />
+                            <Entry Text="{Binding JiraUrl}" Placeholder="https://jira.firma.local" />
+                            <Label Text="PERSONAL ACCESS TOKEN" Style="{StaticResource Field}" />
+                            <Entry Text="{Binding JiraToken}" IsPassword="True" Placeholder="Profil → Personal Access Tokens" />
+                            <HorizontalStackLayout Spacing="8" Margin="0,6,0,0">
+                                <CheckBox IsChecked="{Binding JiraBasic}" />
+                                <Label Text="Basic-Auth statt Bearer (ältere Jira-Versionen)" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Entry Text="{Binding JiraUser}" Placeholder="Benutzername (nur Basic-Auth)" IsVisible="{Binding JiraBasic}" />
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <VerticalStackLayout>
+                                    <Label Text="ACCOUNT-FELD" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding AccountField}" Placeholder="customfield_10100" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="1">
+                                    <Label Text="EPIC-LINK-FELD" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding EpicLinkField}" Placeholder="customfield_10101 (leer = parent)" />
+                                </VerticalStackLayout>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <VerticalStackLayout>
+                                    <Label Text="STANDARD-TICKETTYP" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding IssueType}" Placeholder="Task" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="1">
+                                    <Label Text="TEMPO ACCOUNT-ATTRIBUT" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding TempoAttribute}" Placeholder="_Account_" IsEnabled="{Binding UseTempo}" />
+                                </VerticalStackLayout>
+                            </Grid>
+                            <HorizontalStackLayout Spacing="8" Margin="0,6,0,0">
+                                <CheckBox IsChecked="{Binding UseTempo}" />
+                                <Label Text="Über Tempo Timesheets buchen (inkl. Account)" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="8">
+                                <CheckBox IsChecked="{Binding JiraIgnoreCert}" />
+                                <Label Text="Zertifikatsfehler ignorieren (interne CA)" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0">
+                                <Button Text="Verbindung testen" Command="{Binding TestJiraCommand}" />
+                                <Label Grid.Column="1" Text="{Binding JiraTest}" Style="{StaticResource TestResult}" />
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- GitLab -->
+                    <Border Grid.Column="1" Style="{StaticResource CardBox}" Padding="22" VerticalOptions="Start">
+                        <VerticalStackLayout Spacing="4">
+                            <HorizontalStackLayout Spacing="10">
+                                <c:Icon Name="branch" Color="{StaticResource Amber}" Size="21" />
+                                <Label Text="GitLab" Style="{StaticResource H2}" />
+                            </HorizontalStackLayout>
+                            <Label Text="URL" Style="{StaticResource Field}" />
+                            <Entry Text="{Binding GitLabUrl}" Placeholder="https://gitlab.firma.local" />
+                            <Label Text="PRIVATE ACCESS TOKEN (SCOPE: API)" Style="{StaticResource Field}" />
+                            <Entry Text="{Binding GitLabToken}" IsPassword="True" Placeholder="glpat-…" />
+                            <HorizontalStackLayout Spacing="8" Margin="0,6,0,0">
+                                <CheckBox IsChecked="{Binding GitLabIgnoreCert}" />
+                                <Label Text="Zertifikatsfehler ignorieren (interne CA)" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0">
+                                <Button Text="Verbindung testen" Command="{Binding TestGitLabCommand}" />
+                                <Label Grid.Column="1" Text="{Binding GitLabTest}" Style="{StaticResource TestResult}" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="{StaticResource Line}" Margin="0,18,0,10" />
+                            <HorizontalStackLayout Spacing="10">
+                                <c:Icon Name="clock" Color="{StaticResource Cyan}" Size="21" />
+                                <Label Text="Arbeitszeit" Style="{StaticResource H2}" />
+                            </HorizontalStackLayout>
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                                <VerticalStackLayout>
+                                    <Label Text="MIN. STUNDEN / TAG" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding MinHours}" Keyboard="Numeric" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="1">
+                                    <Label Text="ARBEITSBEGINN" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding DayStart}" Placeholder="08:00" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="2">
+                                    <Label Text="RUNDUNG (MIN)" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding Rounding}" Keyboard="Numeric" />
+                                </VerticalStackLayout>
+                            </Grid>
+                            <Label Text="ARBEITSTAGE" Style="{StaticResource Field}" />
+                            <HorizontalStackLayout BindableLayout.ItemsSource="{Binding WorkDays}" Spacing="6">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate>
+                                        <HorizontalStackLayout Spacing="2">
+                                            <CheckBox IsChecked="{Binding On}" />
+                                            <Label Text="{Binding Label}" VerticalOptions="Center" />
+                                        </HorizontalStackLayout>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </HorizontalStackLayout>
+                            <Label Text="Regeln für Buchungstexte pflegst du direkt in der Zeitbuchung unter „Regeln &amp; Soll“." FontSize="11.5" TextColor="{StaticResource Muted}" Margin="0,6,0,0" />
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- KI -->
+                    <Border Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource CardBox}" Padding="22">
+                        <VerticalStackLayout Spacing="4">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Label Text="" FontSize="18" TextColor="{StaticResource Accent}" />
+                                <Label Grid.Column="1" Text="KI-Agenten (Claude CLI &amp; Copilot CLI)" Style="{StaticResource H2}" />
+                                <Border Grid.Column="2" Style="{StaticResource PanelBox}" Padding="3" StrokeShape="Rectangle">
+                                    <HorizontalStackLayout Spacing="2">
+                                        <Label Text="Standard:" VerticalOptions="Center" Margin="8,0" TextColor="{StaticResource Muted}" FontSize="12" />
+                                        <Button Text="Claude" Style="{StaticResource Ghost}" FontSize="12" Padding="10,3" Command="{Binding SetDefaultCommand}" CommandParameter="Claude">
+                                            <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding DefaultClaude}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                                        </Button>
+                                        <Button Text="Copilot" Style="{StaticResource Ghost}" FontSize="12" Padding="10,3" Command="{Binding SetDefaultCommand}" CommandParameter="Copilot">
+                                            <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding DefaultClaude}" Value="False"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                                        </Button>
+                                    </HorizontalStackLayout>
+                                </Border>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="22" Margin="0,8,0,0">
+                                <VerticalStackLayout Spacing="4">
+                                    <Label Text="Claude Code CLI" Style="{StaticResource H3}" />
+                                    <Label Text="PFAD (LEER = AUTOMATISCH)" Style="{StaticResource Field}" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <Entry Text="{Binding ClaudePath}" Placeholder="%USERPROFILE%\.local\bin\claude.exe" />
+                                        <Button Grid.Column="1" Text="…" Command="{Binding PickClaudeCommand}" />
+                                    </Grid>
+                                    <Label Text="MODELL" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding ClaudeModel}" Placeholder="leer = Standard · opus · sonnet · sonnet[1m]" />
+                                    <Label Text="ZUSÄTZLICHE ARGUMENTE" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding ClaudeArgs}" Placeholder="z.B. --max-turns 40" FontFamily="{StaticResource Mono}" />
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0">
+                                        <Button Text="Testen" Command="{Binding TestClaudeCommand}" />
+                                        <Label Grid.Column="1" Text="{Binding ClaudeTest}" Style="{StaticResource TestResult}" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                    <Label Text="GitHub Copilot CLI" Style="{StaticResource H3}" />
+                                    <Label Text="PFAD (LEER = AUTOMATISCH)" Style="{StaticResource Field}" />
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <Entry Text="{Binding CopilotPath}" Placeholder="%APPDATA%\npm\copilot.cmd" />
+                                        <Button Grid.Column="1" Text="…" Command="{Binding PickCopilotCommand}" />
+                                    </Grid>
+                                    <Label Text="MODELL" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding CopilotModel}" Placeholder="leer = Standard · claude-sonnet-4.5 · gpt-5" />
+                                    <Label Text="ZUSÄTZLICHE ARGUMENTE" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding CopilotArgs}" Placeholder="z.B. --log-level none" FontFamily="{StaticResource Mono}" />
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0">
+                                        <Button Text="Testen" Command="{Binding TestCopilotCommand}" />
+                                        <Label Grid.Column="1" Text="{Binding CopilotTest}" Style="{StaticResource TestResult}" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </Grid>
+                            <Label Text="GLOBALE ANWEISUNGEN FÜR ALLE SESSIONS" Style="{StaticResource Field}" Margin="0,14,0,2" />
+                            <Editor Text="{Binding Instructions}" AutoSize="TextChanges" MinimumHeightRequest="70" />
+                        </VerticalStackLayout>
+                    </Border>
+                </Grid>
+
+                <HorizontalStackLayout Spacing="10">
+                    <Label Text="{Binding DataFolder, StringFormat='Daten: {0}'}" Style="{StaticResource MonoLabel}" VerticalOptions="Center" />
+                    <Button Text="Ordner öffnen" Style="{StaticResource Chip}" Command="{Binding OpenDataCommand}" />
+                </HorizontalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+        <Grid Grid.Row="1" BackgroundColor="{StaticResource Bg2}" Padding="32,12">
+            <Button Text="Speichern" Style="{StaticResource Primary}" HorizontalOptions="End" WidthRequest="180" Command="{Binding SaveCommand}" />
+        </Grid>
+    </Grid>
+</ContentView>
+

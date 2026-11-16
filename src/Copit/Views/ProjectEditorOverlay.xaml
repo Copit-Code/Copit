@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:c="clr-namespace:Copit.Controls"
+             x:Class="Copit.Views.ProjectEditorOverlay"
+             x:Name="Root"
+             IsVisible="{Binding IsOpen}">
+    <Grid BackgroundColor="#D0100C0A">
+        <Border Style="{StaticResource CardBox}" WidthRequest="560" VerticalOptions="Center" HorizontalOptions="Center" Padding="24">
+            <VerticalStackLayout Spacing="14">
+                <Grid ColumnDefinitions="*,Auto">
+                    <Label Text="{Binding Title}" Style="{StaticResource H2}" />
+                    <c:IconButton Icon="x" Grid.Column="1" Command="{Binding CloseCommand}" />
+                </Grid>
+
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="EPIC (HAUPTPROJEKT IN JIRA)" Style="{StaticResource Caption}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Entry Text="{Binding Epic}" Placeholder="z.B. SHOP-100" Unfocused="OnEpicUnfocused" />
+                        <Button Grid.Column="1" Text="Prüfen" Command="{Binding CheckEpicCommand}" />
+                    </Grid>
+                    <Label Text="{Binding EpicInfo}" FontSize="12" TextColor="{StaticResource Muted}">
+                        <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding EpicOk}" Value="True"><Setter Property="TextColor" Value="{StaticResource Green}" /></DataTrigger></Label.Triggers>
+                    </Label>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="NAME" Style="{StaticResource Caption}" />
+                    <Entry Text="{Binding Name}" Placeholder="Projektname" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="QUELLCODE-ORDNER" Style="{StaticResource Caption}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Entry Text="{Binding Folder}" Placeholder="C:\GIT\mein-projekt" />
+                        <Button Grid.Column="1" Text="Wählen" Command="{Binding PickFolderCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="GITLAB-PROJEKT (AUTOMATISCH AUS GIT-REMOTE)" Style="{StaticResource Caption}" />
+                    <Entry Text="{Binding GitLab}" Placeholder="gruppe/repo oder Projekt-ID" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="KI-ANWEISUNGEN FÜR DIESES PROJEKT (OPTIONAL)" Style="{StaticResource Caption}" />
+                    <Editor Text="{Binding Instructions}" AutoSize="TextChanges" MinimumHeightRequest="60"
+                            Placeholder="z.B. .NET 8, Clean Architecture, Tests mit xUnit, Commit-Messages auf Englisch" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="FARBE" Style="{StaticResource Caption}" />
+                    <HorizontalStackLayout BindableLayout.ItemsSource="{Binding Palette}" Spacing="8">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border WidthRequest="26" HeightRequest="26" StrokeShape="Rectangle" BackgroundColor="{Binding ., Converter={StaticResource Hex}}" StrokeThickness="0">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickColorCommand}" CommandParameter="{Binding .}" />
+                                    </Border.GestureRecognizers>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </HorizontalStackLayout>
+                    <BoxView HeightRequest="3" CornerRadius="0" Color="{Binding Color, Converter={StaticResource Hex}}" />
+                </VerticalStackLayout>
+
+                <Label Text="{Binding Error}" TextColor="{StaticResource Red}" IsVisible="{Binding Error, Converter={StaticResource HasText}}" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <Button Text="Abbrechen" Command="{Binding CloseCommand}" />
+                    <Button Grid.Column="1" Text="Speichern" Style="{StaticResource Primary}" Command="{Binding SaveCommand}" />
+                </Grid>
+            </VerticalStackLayout>
+        </Border>
+    </Grid>
+</ContentView>
+

@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:v="clr-namespace:Copit.Views"
+             xmlns:c="clr-namespace:Copit.Controls"
+             x:Class="Copit.Views.ProjectDetailView"
+             x:Name="Root">
+    <ContentView.Resources>
+        <Style x:Key="Tab" TargetType="Button" BasedOn="{StaticResource Ghost}">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="14,4" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+
+        <DataTemplate x:Key="IssueCard">
+            <Border Style="{StaticResource PanelBox}" Padding="12,10" Margin="0,0,0,8" BackgroundColor="{StaticResource Card}">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.WorkOnIssueCommand}" CommandParameter="{Binding .}" />
+                </Border.GestureRecognizers>
+                <VerticalStackLayout Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="{Binding Key}" FontAttributes="Bold" FontSize="12" TextColor="{StaticResource Cyan}" />
+                        <Label Grid.Column="1" Text="{Binding IssueType}" FontSize="10.5" TextColor="{StaticResource Muted}" />
+                    </Grid>
+                    <Label Text="{Binding Summary}" FontSize="12.5" LineBreakMode="WordWrap" MaxLines="3" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="{Binding Assignee}" FontSize="11" TextColor="{StaticResource Text2}" LineBreakMode="TailTruncation" />
+                        <Label Grid.Column="1" FontSize="11" TextColor="{StaticResource Muted}">
+                            <Label.FormattedText>
+                                <FormattedString>
+                                    <Span Text="{Binding TimeSpentSeconds, Converter={x:Static v:HoursConverter.Instance}}" />
+                                    <Span Text="/ " />
+                                    <Span Text="{Binding OriginalEstimateSeconds, Converter={x:Static v:HoursConverter.Instance}}" />
+                                </FormattedString>
+                            </Label.FormattedText>
+                        </Label>
+                    </Grid>
+                    <Label Text="{Binding Status}" FontSize="10.5" TextColor="{StaticResource Muted}" />
+                </VerticalStackLayout>
+            </Border>
+        </DataTemplate>
+    </ContentView.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,*">
+        <!-- ================= Header ================= -->
+        <Border Background="{StaticResource HeroGradient}" Padding="32,22,32,16" StrokeThickness="0">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="24" RowSpacing="14">
+                <VerticalStackLayout Spacing="4">
+                    <HorizontalStackLayout Spacing="8">
+                        <BoxView WidthRequest="10" HeightRequest="10" CornerRadius="0" Color="{Binding Project.Color, Converter={StaticResource Hex}}" VerticalOptions="Center" />
+                        <Label Text="{Binding Project.EpicKey}" TextColor="{StaticResource Cyan}" FontAttributes="Bold">
+                            <Label.GestureRecognizers><TapGestureRecognizer Command="{Binding OpenEpicCommand}" /></Label.GestureRecognizers>
+                        </Label>
+                        <Label Text="{Binding Epic.Status}" FontSize="12" TextColor="{StaticResource Muted}" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                    <Label Text="{Binding Project.Name}" Style="{StaticResource H1}" />
+                    <Label Text="{Binding Epic.Summary}" Style="{StaticResource Sub}" />
+                </VerticalStackLayout>
+                <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Start">
+                    <Button Text="Session öffnen" Style="{StaticResource Primary}" Command="{Binding OpenSessionCommand}" />
+                    <Button Text="Ticket" Command="{Binding NewTicketCommand}" />
+                    <c:IconButton Icon="code" Command="{Binding OpenEditorCommand}" ToolTipProperties.Text="In VS Code öffnen" />
+                    <c:IconButton Icon="terminal" Command="{Binding OpenTerminalCommand}" ToolTipProperties.Text="Terminal" />
+                    <c:IconButton Icon="folder" Command="{Binding OpenFolderCommand}" ToolTipProperties.Text="Ordner öffnen" />
+                    <c:IconButton Icon="link" Command="{Binding OpenGitLabCommand}" ToolTipProperties.Text="GitLab öffnen" />
+                    <c:IconButton Icon="pencil" Command="{Binding EditCommand}" ToolTipProperties.Text="Projekt bearbeiten" />
+                    <c:IconButton Icon="trash" Command="{Binding DeleteProjectCommand}" ToolTipProperties.Text="Projekt entfernen" />
+                </HorizontalStackLayout>
+
+                <!-- Stats -->
+                <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnDefinitions="*,*,Auto" ColumnSpacing="28">
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="{Binding StatsTickets}" FontSize="12" TextColor="{StaticResource Text2}" />
+                        <ProgressBar Progress="{Binding DoneFraction}" ProgressColor="{StaticResource Green}" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Grid.Column="1" Spacing="6">
+                        <Label Text="{Binding StatsHours}" FontSize="12" TextColor="{StaticResource Text2}" />
+                        <ProgressBar Progress="{Binding HoursFraction}" ProgressColor="{StaticResource Accent}" />
+                    </VerticalStackLayout>
+                    <HorizontalStackLayout Grid.Column="2" Spacing="10" VerticalOptions="Center">
+                        <Label Text="" TextColor="{StaticResource Cyan}" VerticalOptions="Center" />
+                        <Label Text="{Binding Branch}" Style="{StaticResource MonoLabel}" VerticalOptions="Center" />
+                        <Label Text="{Binding ChangeCount, StringFormat='{0} Änderungen'}" FontSize="11" TextColor="{StaticResource Amber}" VerticalOptions="Center" />
+                        <Border Style="{StaticResource Pill}" BackgroundColor="{Binding PipelineStatus, Converter={StaticResource StatusSoft}}" IsVisible="{Binding HasPipeline}">
+                            <HorizontalStackLayout Spacing="4">
+                                <c:Icon Name="{Binding PipelineStatus, Converter={StaticResource StatusIcon}}" Color="{Binding PipelineStatus, Converter={StaticResource StatusColor}}" Size="13" />
+                                <Label Text="{Binding PipelineStatus}" FontSize="11" FontAttributes="Bold" TextColor="{Binding PipelineStatus, Converter={StaticResource StatusColor}}" />
+                            </HorizontalStackLayout>
+                        </Border>
+                    </HorizontalStackLayout>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- ================= Tabs ================= -->
+        <Grid Grid.Row="1" Padding="28,10" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
+            <Button Text="Tickets" Style="{StaticResource Tab}" Command="{Binding SetTabCommand}" CommandParameter="tickets">
+                <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsTickets}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource Card}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+            </Button>
+            <Button Grid.Column="1" Text="Notizen" Style="{StaticResource Tab}" Command="{Binding SetTabCommand}" CommandParameter="notes">
+                <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsNotes}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource Card}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+            </Button>
+            <Button Grid.Column="2" Text="Sessions" Style="{StaticResource Tab}" Command="{Binding SetTabCommand}" CommandParameter="sessions">
+                <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsSessions}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource Card}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+            </Button>
+            <Entry Grid.Column="4" Text="{Binding Filter}" Placeholder="Filter: Key, Titel, Person…" WidthRequest="260" IsVisible="{Binding IsTickets}" />
+            <Button Grid.Column="5" Text="Nur meine" Style="{StaticResource Chip}" Command="{Binding ToggleMineCommand}" IsVisible="{Binding IsTickets}" Margin="8,0,0,0">
+                <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding OnlyMine}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+            </Button>
+            <c:IconButton Icon="refresh" Grid.Column="6" Command="{Binding LoadCommand}" ToolTipProperties.Text="Neu laden" />
+        </Grid>
+
+        <!-- ================= Tickets Board ================= -->
+        <Grid Grid.Row="2" IsVisible="{Binding IsTickets}" Padding="28,0,28,20">
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
+                <Grid BindingContext="{Binding Columns[0]}" RowDefinitions="Auto,*">
+                    <HorizontalStackLayout Spacing="8" Margin="2,0,0,10">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="0" Color="{Binding Color}" VerticalOptions="Center" />
+                        <Label Text="{Binding Title}" Style="{StaticResource H3}" />
+                        <Label Text="{Binding Issues.Count}" TextColor="{StaticResource Muted}" />
+                    </HorizontalStackLayout>
+                    <ScrollView Grid.Row="1"><VerticalStackLayout BindableLayout.ItemsSource="{Binding Issues}" BindableLayout.ItemTemplate="{StaticResource IssueCard}" /></ScrollView>
+                </Grid>
+                <Grid Grid.Column="1" BindingContext="{Binding Columns[1]}" RowDefinitions="Auto,*">
+                    <HorizontalStackLayout Spacing="8" Margin="2,0,0,10">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="0" Color="{Binding Color}" VerticalOptions="Center" />
+                        <Label Text="{Binding Title}" Style="{StaticResource H3}" />
+                        <Label Text="{Binding Issues.Count}" TextColor="{StaticResource Muted}" />
+                    </HorizontalStackLayout>
+                    <ScrollView Grid.Row="1"><VerticalStackLayout BindableLayout.ItemsSource="{Binding Issues}" BindableLayout.ItemTemplate="{StaticResource IssueCard}" /></ScrollView>
+                </Grid>
+                <Grid Grid.Column="2" BindingContext="{Binding Columns[2]}" RowDefinitions="Auto,*">
+                    <HorizontalStackLayout Spacing="8" Margin="2,0,0,10">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="0" Color="{Binding Color}" VerticalOptions="Center" />
+                        <Label Text="{Binding Title}" Style="{StaticResource H3}" />
+                        <Label Text="{Binding Issues.Count}" TextColor="{StaticResource Muted}" />
+                    </HorizontalStackLayout>
+                    <ScrollView Grid.Row="1"><VerticalStackLayout BindableLayout.ItemsSource="{Binding Issues}" BindableLayout.ItemTemplate="{StaticResource IssueCard}" /></ScrollView>
+                </Grid>
+                <Grid Grid.Column="3" BindingContext="{Binding Columns[3]}" RowDefinitions="Auto,*">
+                    <HorizontalStackLayout Spacing="8" Margin="2,0,0,10">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="0" Color="{Binding Color}" VerticalOptions="Center" />
+                        <Label Text="{Binding Title}" Style="{StaticResource H3}" />
+                        <Label Text="{Binding Issues.Count}" TextColor="{StaticResource Muted}" />
+                    </HorizontalStackLayout>
+                    <ScrollView Grid.Row="1"><VerticalStackLayout BindableLayout.ItemsSource="{Binding Issues}" BindableLayout.ItemTemplate="{StaticResource IssueCard}" Opacity="0.75" /></ScrollView>
+                </Grid>
+            </Grid>
+            <VerticalStackLayout IsVisible="{Binding Loading}" HorizontalOptions="Center" VerticalOptions="Center" Spacing="8">
+                <c:AiOrb WidthRequest="90" HeightRequest="90" IsActive="True" />
+                <Label Text="Lade Tickets aus Jira…" TextColor="{StaticResource Text2}" HorizontalOptions="Center" />
+            </VerticalStackLayout>
+            <Label Text="{Binding Error}" TextColor="{StaticResource Red}" VerticalOptions="Start" IsVisible="{Binding Error, Converter={StaticResource HasText}}" />
+        </Grid>
+
+        <!-- ================= Notizen ================= -->
+        <Grid Grid.Row="2" IsVisible="{Binding IsNotes}" Padding="28,0,28,20" ColumnDefinitions="420,*" ColumnSpacing="24">
+            <Border Style="{StaticResource CardBox}" VerticalOptions="Start">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Neue Notiz" Style="{StaticResource H3}" />
+                    <Editor Text="{Binding NewNote}" AutoSize="TextChanges" MinimumHeightRequest="110"
+                            Placeholder="Was ist dir aufgefallen? Erkenntnisse, Entscheidungen, Stolpersteine…" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <DatePicker Date="{Binding NewNoteDate}" Format="dd.MM.yyyy" TextColor="{StaticResource Text}" BackgroundColor="{StaticResource Panel}" />
+                        <Button Grid.Column="1" Text="Speichern" Style="{StaticResource Primary}" Command="{Binding AddNoteCommand}" />
+                    </Grid>
+                    <Label Text="Notizen fließen automatisch in die Zeitbuchung des jeweiligen Tages ein." FontSize="11" TextColor="{StaticResource Muted}" LineBreakMode="WordWrap" />
+                </VerticalStackLayout>
+            </Border>
+            <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="12">
+                <Entry Text="{Binding NoteSearch}" Placeholder="Notizen durchsuchen…" />
+                <ScrollView Grid.Row="1">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding NoteGroups}" Spacing="16">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <VerticalStackLayout Spacing="8">
+                                    <Label Text="{Binding Title}" Style="{StaticResource Caption}" />
+                                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding .}" Spacing="8">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Style="{StaticResource PanelBox}">
+                                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                                        <VerticalStackLayout Spacing="4">
+                                                            <Label Text="{Binding Text}" LineBreakMode="WordWrap" />
+                                                            <Label Text="{Binding CreatedAt, StringFormat='{0:dd.MM.yyyy HH:mm}'}" FontSize="10.5" TextColor="{StaticResource Muted}" />
+                                                        </VerticalStackLayout>
+                                                        <c:IconButton Icon="pin" Grid.Column="1" ToolTipProperties.Text="Anheften" Command="{Binding Source={x:Reference Root}, Path=BindingContext.PinNoteCommand}" CommandParameter="{Binding .}" />
+                                                        <c:IconButton Icon="trash" Grid.Column="2" Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteNoteCommand}" CommandParameter="{Binding .}" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </VerticalStackLayout>
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </ScrollView>
+            </Grid>
+        </Grid>
+
+        <!-- ================= Sessions ================= -->
+        <ScrollView Grid.Row="2" IsVisible="{Binding IsSessions}" Padding="28,0,28,20">
+            <VerticalStackLayout Spacing="10" MaximumWidthRequest="900" HorizontalOptions="Start">
+                <Button Text="Neue Session" Style="{StaticResource Primary}" HorizontalOptions="Start" Command="{Binding NewSessionCommand}" />
+                <VerticalStackLayout BindableLayout.ItemsSource="{Binding SessionList}" Spacing="8">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource CardBox}" Padding="14,10" WidthRequest="700" HorizontalOptions="Start">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenExistingSessionCommand}" CommandParameter="{Binding .}" />
+                                </Border.GestureRecognizers>
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                                    <c:Icon Name="chat" Color="{StaticResource Accent}" Size="14" />
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                        <Label Text="{Binding Title}" FontAttributes="Bold" />
+                                        <Label FontSize="11" TextColor="{StaticResource Muted}">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="{Binding Session.Provider}" />
+                                                    <Span Text="· " />
+                                                    <Span Text="{Binding Session.Messages.Count, StringFormat='{0} Nachrichten'}" />
+                                                    <Span Text="· " />
+                                                    <Span Text="{Binding Session.UpdatedAt, StringFormat='{0:dd.MM.yyyy HH:mm}'}" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="2" Text="{Binding ContextText}" FontSize="11" TextColor="{StaticResource Text2}" VerticalOptions="Center" />
+                                    <c:PulseDot Grid.Column="3" Color="{StaticResource Cyan}" Pulsing="{Binding IsRunning}" IsVisible="{Binding IsRunning}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- ================= Ticket-Dialog ================= -->
+        <Grid Grid.RowSpan="3" IsVisible="{Binding ShowTicket}" BackgroundColor="#D0100C0A">
+            <Border Style="{StaticResource CardBox}" WidthRequest="760" VerticalOptions="Center" HorizontalOptions="Center" Padding="24" MaximumHeightRequest="860">
+                <ScrollView>
+                    <VerticalStackLayout Spacing="14">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout>
+                                <Label Text="Neues Ticket" Style="{StaticResource H2}" />
+                                <Label Text="{Binding Project.EpicKey, StringFormat='wird im Epic {0} angelegt'}" Style="{StaticResource Sub}" />
+                            </VerticalStackLayout>
+                            <c:IconButton Icon="x" Grid.Column="1" Command="{Binding CloseTicketCommand}" />
+                        </Grid>
+
+                        <Border Style="{StaticResource PanelBox}" BackgroundColor="#181412" Stroke="#3A322B">
+                            <VerticalStackLayout Spacing="10">
+                                <Label Text="IDEE BESCHREIBEN – DIE KI ARBEITET DAS TICKET AUS UND SCHÄTZT" Style="{StaticResource Caption}" TextColor="{StaticResource Accent}" />
+                                <Editor Text="{Binding TicketIdea}" AutoSize="TextChanges" MinimumHeightRequest="80"
+                                        Placeholder="z.B. Nutzer sollen ihre Bestellungen als CSV exportieren können, inkl. Filter nach Datum" />
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                    <Border Style="{StaticResource PanelBox}" Padding="3" StrokeShape="Rectangle">
+                                        <HorizontalStackLayout Spacing="2">
+                                            <Button Text="Claude" Style="{StaticResource Tab}" FontSize="12" Command="{Binding SetTicketProviderCommand}" CommandParameter="Claude">
+                                                <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding TicketIsClaude}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                                            </Button>
+                                            <Button Text="Copilot" Style="{StaticResource Tab}" FontSize="12" Command="{Binding SetTicketProviderCommand}" CommandParameter="Copilot">
+                                                <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding TicketIsCopilot}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+                                            </Button>
+                                        </HorizontalStackLayout>
+                                    </Border>
+                                    <HorizontalStackLayout Grid.Column="1" Spacing="8" IsVisible="{Binding Drafting}">
+                                        <c:AiOrb WidthRequest="30" HeightRequest="30" IsActive="True" />
+                                        <Label Text="{Binding DraftStatus}" TextColor="{StaticResource Cyan}" VerticalOptions="Center" FontSize="12" />
+                                    </HorizontalStackLayout>
+                                    <Button Grid.Column="2" Text="Ausarbeiten &amp; schätzen" Style="{StaticResource Primary}" Command="{Binding DraftTicketCommand}" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="TITEL" Style="{StaticResource Caption}" />
+                            <Entry Text="{Binding TicketSummary}" Placeholder="Kurzer, prägnanter Titel" />
+                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="*,160" ColumnSpacing="14">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="TYP" Style="{StaticResource Caption}" />
+                                <HorizontalStackLayout BindableLayout.ItemsSource="{Binding IssueTypes}" Spacing="6">
+                                    <BindableLayout.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Text="{Binding .}" Style="{StaticResource Chip}"
+                                                    Command="{Binding Source={x:Reference Root}, Path=BindingContext.SetTicketTypeCommand}" CommandParameter="{Binding .}" />
+                                        </DataTemplate>
+                                    </BindableLayout.ItemTemplate>
+                                </HorizontalStackLayout>
+                                <Label Text="{Binding TicketType, StringFormat='Gewählt: {0}'}" FontSize="11" TextColor="{StaticResource Cyan}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                <Label Text="SCHÄTZUNG (H)" Style="{StaticResource Caption}" />
+                                <Entry Text="{Binding TicketEstimate}" Keyboard="Numeric" FontAttributes="Bold" />
+                            </VerticalStackLayout>
+                        </Grid>
+                        <Label Text="{Binding TicketReason}" FontSize="12" TextColor="{StaticResource Text2}" IsVisible="{Binding TicketReason, Converter={StaticResource HasText}}" LineBreakMode="WordWrap" />
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="BESCHREIBUNG" Style="{StaticResource Caption}" />
+                            <Editor Text="{Binding TicketDescription}" AutoSize="TextChanges" MinimumHeightRequest="160" FontSize="12.5" />
+                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <Button Text="Abbrechen" Command="{Binding CloseTicketCommand}" />
+                            <Grid Grid.Column="1">
+                                <Button Text="In Jira anlegen" Style="{StaticResource Primary}" Command="{Binding CreateTicketCommand}" IsEnabled="{Binding HasDraft}" />
+                                <ActivityIndicator IsRunning="{Binding Creating}" IsVisible="{Binding Creating}" Color="White" HorizontalOptions="End" Margin="0,0,12,0" WidthRequest="16" HeightRequest="16" />
+                            </Grid>
+                        </Grid>
+                    </VerticalStackLayout>
+                </ScrollView>
+            </Border>
+        </Grid>
+
+        <v:ProjectEditorOverlay Grid.RowSpan="3" BindingContext="{Binding Editor}" />
+    </Grid>
+</ContentView>
+
