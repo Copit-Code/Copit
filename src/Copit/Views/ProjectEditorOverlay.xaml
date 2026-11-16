@@ -30,6 +30,14 @@
                 </VerticalStackLayout>
 
                 <VerticalStackLayout Spacing="4">
+                    <Label Text="ORDNER IN DER PROJEKTLISTE (OPTIONAL)" Style="{StaticResource Caption}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Entry Text="{Binding Group}" Placeholder="z.B. Kunde A/Backend – leer = ohne Ordner" />
+                        <Button Grid.Column="1" Text="Wählen" Command="{Binding PickGroupCommand}" />
+                    </Grid>
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="4">
                     <Label Text="QUELLCODE-ORDNER" Style="{StaticResource Caption}" />
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                         <Entry Text="{Binding Folder}" Placeholder="C:\GIT\mein-projekt" />

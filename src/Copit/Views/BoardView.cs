@@ -229,13 +229,13 @@ public class BoardView : ContentView, IActivatable
                 {
                     templateIndex = i;
                     if (i == 0) { extraTools = []; Build(); return; }
-                    var t = templates[i - 1].Template;
-                    string Fill(string x) => x.Replace("{{ticket}}", ticket.Trim().ToUpperInvariant()).Replace("{{project}}", project.Name).Replace("{{branch}}", branch);
+                    var (tplExt, t) = templates[i - 1];
+                    string Fill(string x) => ExtensionService.FillTemplate(x, ticket, project.Name, branch, tplExt.Dir);
                     title = Fill(t.Title);
                     prompt = Fill(t.Prompt);
                     if (Enum.TryParse<AgentMode>(t.Mode, true, out var md)) mode = md;
                     if (!string.IsNullOrWhiteSpace(t.Branch) && branch.Length == 0) branch = Fill(t.Branch!);
-                    extraTools = t.AllowedTools;
+                    extraTools = [.. t.AllowedTools.Select(Fill)];
                     Build();
                 })));
             form.Add(Stack(4, Caption("Projekt"), Pick(projects.Select(p => $"{p.Name}{(string.IsNullOrEmpty(p.EpicKey) ? "" : " · " + p.EpicKey)}").ToList(), projects.IndexOf(project), i => project = projects[i])));

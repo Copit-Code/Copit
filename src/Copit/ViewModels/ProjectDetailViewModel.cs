@@ -96,7 +96,7 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         {
             var e = _data.Project(p.Id);
             if (e == null) return;
-            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions;
+            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions; ProjectFolders.Move(data.Projects.Value, e, p.Group);
             await _data.Projects.SaveAsync();
             _data.RaiseProjectsChanged();
             Project = null; Project = e;
@@ -192,7 +192,7 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     [RelayCommand] private void OpenTerminal() { if (Project != null) Dialogs.OpenTerminal(Project.SourceFolder); }
     [RelayCommand]
     private Task OpenGitLabAsync() => Dialogs.OpenUrl(Project == null || _hub.GitLab == null || string.IsNullOrEmpty(Project.GitLabProject) ? null : $"{_hub.GitLab.BaseUrl}/{Project.GitLabProject}");
-    [RelayCommand] private void Edit() => Editor.Open(Project);
+    [RelayCommand] private void Edit() { Editor.KnownGroups = ProjectFolders.AllPaths(_data.Projects.Value); Editor.Open(Project); }
 
     [RelayCommand]
     private async Task DeleteProjectAsync()

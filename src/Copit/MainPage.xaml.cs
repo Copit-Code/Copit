@@ -55,7 +55,10 @@ public partial class MainPage : ContentPage
             shell.LoadProjects();
             var settings = sp.GetRequiredService<SettingsService>();
             var start = Environment.GetEnvironmentVariable("COPIT_START_ROUTE");
-            Show(!string.IsNullOrEmpty(start) ? start : settings.JiraConfigured || settings.GitLabConfigured ? Routes.Home : Routes.Settings, null);
+            // Startseite ist immer das Cockpit; ohne Verbindungen nur ein Hinweis auf die Einstellungen
+            Show(!string.IsNullOrEmpty(start) ? start : Routes.Home, null);
+            if (string.IsNullOrEmpty(start) && !settings.JiraConfigured && !settings.GitLabConfigured)
+                toasts.Show("Noch keine Verbindungen", "Jira/GitLab unter Einstellungen verbinden – Klicken zum Öffnen", NoticeLevel.Info, "settings", null);
             shell.StartClock();
             var mgr = sp.GetRequiredService<SessionManager>(); // verbindet Agents mit dem Automations-Motor
             mgr.Warn += (t, m) => toasts.Show(t, m, NoticeLevel.Warning);
@@ -251,6 +254,7 @@ public partial class MainPage : ContentPage
                     case "project": _nav.Go(Routes.Project, t.ActionArg); break;
                     case "automation": _nav.Go(Routes.Automations); break;
                     case "extensions": _nav.Go(Routes.Extensions); break;
+                    case "settings": _nav.Go(Routes.Settings); break;
                     case "update":
                         _ = Task.Run(async () =>
                         {

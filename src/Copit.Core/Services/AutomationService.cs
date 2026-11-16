@@ -145,7 +145,20 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
         ["summary"] = a.Summary ?? "", ["provider"] = a.Provider.ToString(), ["cost"] = a.TotalCostUsd.ToString("0.00"),
         ["agentMinutes"] = (a.AgentMs / 60000).ToString(), ["aiMinutes"] = (a.AiMs / 60000).ToString(),
         ["lines"] = $"+{a.LinesAdded} -{a.LinesRemoved}", ["files"] = a.FilesChanged.ToString(), ["repo"] = a.Cwd ?? "",
+        // Zusätzlich für Extensions (z. B. Obsidian-Notizen): Rohwerte statt formatierter Texte
+        ["projectId"] = a.ProjectId, ["model"] = a.Model, ["mode"] = a.Mode.ToString(), ["baseSha"] = a.BaseSha ?? "",
+        ["tokens"] = a.Tokens.ToString(), ["outputTokens"] = a.OutputTokens.ToString(), ["turns"] = a.Turns.ToString(),
+        ["toolMinutes"] = (a.ToolMs / 60000).ToString(), ["linesAdded"] = a.LinesAdded.ToString(), ["linesRemoved"] = a.LinesRemoved.ToString(),
+        ["created"] = a.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ss"), ["updated"] = a.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ss"),
+        ["prompt"] = FirstPrompt(a),
     };
+
+    /// <summary>Erster Auftrag des Agents (gekürzt – Umgebungsvariablen sind begrenzt).</summary>
+    private static string FirstPrompt(ChatSession a)
+    {
+        var t = a.Messages.FirstOrDefault(m => m.Role == ChatRole.User)?.Text ?? a.PendingPrompt ?? "";
+        return t.Length > 4000 ? t[..4000] + " …" : t;
+    }
 
     private IEnumerable<string> Repos() =>
         data.Projects.Value.Projects.Select(p => p.SourceFolder).Where(GitService.IsRepo).Distinct(StringComparer.OrdinalIgnoreCase);

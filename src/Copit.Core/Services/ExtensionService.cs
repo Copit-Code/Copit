@@ -37,7 +37,7 @@ public class ExtAgentTemplate
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
-    /// <summary>Auftrag mit Platzhaltern {{ticket}}, {{project}}, {{branch}}.</summary>
+    /// <summary>Auftrag mit Platzhaltern {{ticket}}, {{project}}, {{branch}}, {{ext}} (gilt auch für AllowedTools).</summary>
     public string Prompt { get; set; } = "";
     public string Mode { get; set; } = "Edit";
     public string? Branch { get; set; }
@@ -323,6 +323,11 @@ public class ExtensionService(DataService data, SettingsService settings)
     }
 
     // ------------------------------------------------------------ Beiträge
+
+    /// <summary>Platzhalter in Agent-Vorlagen: {{ticket}}, {{project}}, {{branch}}, {{ext}} (Extension-Ordner mit '/', z. B. für Skriptaufrufe).</summary>
+    public static string FillTemplate(string text, string ticket, string project, string branch, string extDir) =>
+        text.Replace("{{ticket}}", ticket.Trim().ToUpperInvariant()).Replace("{{project}}", project).Replace("{{branch}}", branch)
+            .Replace("{{ext}}", extDir.Replace('\\', '/').TrimEnd('/'));
 
     public IEnumerable<(InstalledExtension Ext, ExtAgentTemplate Template)> AgentTemplates =>
         Active.SelectMany(e => e.Manifest.AgentTemplates.Select(t => (e, t)));

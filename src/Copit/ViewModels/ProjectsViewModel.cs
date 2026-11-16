@@ -21,6 +21,21 @@ public partial class ProjectCard : ObservableObject
     partial void OnPipelineStatusChanged(string? value) => OnPropertyChanged(nameof(HasPipeline));
 }
 
+/// <summary>Zeile der gruppierten Projektliste: Ordner-Kopf oder Projekt.</summary>
+public partial class ProjectListRow : ObservableObject
+{
+    public bool IsFolder { get; init; }
+    public bool IsProject => !IsFolder;
+    public string FolderPath { get; init; } = "";
+    public string FolderName { get; init; } = "";
+    public int Count { get; init; }
+    public bool Collapsed { get; init; }
+    public string Chevron => Collapsed ? "chevron-right" : "chevron-down";
+    public int Depth { get; init; }
+    public Thickness Indent => new(10 + Depth * 22, IsFolder ? 10 : 12, 10, IsFolder ? 10 : 12);
+    public ProjectCard? Card { get; init; }
+}
+
 /// <summary>Projekt anlegen / bearbeiten (gemeinsam genutzt von Liste und Detail).</summary>
 public partial class ProjectEditor : ObservableObject
 {
@@ -36,6 +51,9 @@ public partial class ProjectEditor : ObservableObject
     [ObservableProperty] public partial string GitLab { get; set; } = "";
     [ObservableProperty] public partial string Color { get; set; } = "#8B5CF6";
     [ObservableProperty] public partial string Instructions { get; set; } = "";
+    /// <summary>Ordner in der Projektliste (z. B. "Kunde A/Backend").</summary>
+    [ObservableProperty] public partial string Group { get; set; } = "";
+    public List<string> KnownGroups { get; set; } = [];
     [ObservableProperty] public partial string EpicInfo { get; set; } = "";
     [ObservableProperty] public partial bool EpicOk { get; set; }
     [ObservableProperty] public partial string Error { get; set; } = "";
@@ -50,7 +68,7 @@ public partial class ProjectEditor : ObservableObject
     {
         EditingId = p?.Id;
         Name = p?.Name ?? ""; Epic = p?.EpicKey ?? ""; Folder = p?.SourceFolder ?? ""; GitLab = p?.GitLabProject ?? "";
-        Color = p?.Color ?? Palette[Random.Shared.Next(Palette.Length)]; Instructions = p?.Instructions ?? "";
+        Color = p?.Color ?? Palette[Random.Shared.Next(Palette.Length)]; Instructions = p?.Instructions ?? ""; Group = p?.Group ?? Group;
         EpicInfo = ""; EpicOk = false; Error = "";
         IsOpen = true;
         if (!string.IsNullOrEmpty(Epic)) _ = CheckEpicAsync();
@@ -58,6 +76,18 @@ public partial class ProjectEditor : ObservableObject
 
     [RelayCommand] private void Close() => IsOpen = false;
     [RelayCommand] private void PickColor(string c) => Color = c;
+
+    [RelayCommand]
+    private async Task PickGroupAsync()
+    {
+        var options = new List<string> { "Ohne Ordner", "Neuer Ordner…" };
+        options.AddRange(KnownGroups);
+        var pick = await Dialogs.Choose("Ordner wählen", [.. options]);
+        if (pick == null) return;
+        if (pick == "Ohne Ordner") Group = "";
+        else if (pick == "Neuer Ordner…") { var n = await Dialogs.Prompt("Neuer Ordner", "Name, Unterordner mit / (z. B. Kunde A/Backend)", Group); if (n != null) Group = ProjectFolders.Normalize(n); }
+        else Group = pick;
+    }
 
     [RelayCommand]
     private async Task PickFolderAsync()
@@ -98,7 +128,7 @@ public partial class ProjectEditor : ObservableObject
         {
             Id = EditingId ?? Guid.NewGuid().ToString("N"),
             Name = Name.Trim(), EpicKey = Epic.Trim().ToUpperInvariant(), SourceFolder = Folder.Trim(),
-            GitLabProject = GitLab.Trim(), Color = Color, Instructions = Instructions
+            GitLabProject = GitLab.Trim(), Color = Color, Instructions = Instructions, Group = ProjectFolders.Normalize(Group)
         };
         IsOpen = false;
         if (Saved != null) await Saved(p);
@@ -114,16 +144,17 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
     private readonly SessionStore _sessions;
     private readonly ToastService _toast;
 
-    public ObservableCollection<ProjectCard> Projects { get; } = [];
+    public ObservableCollection<ProjectListRow> Rows { get; } = [];
+    private readonly Dictionary<string, ProjectCard> _cards = [];
     public ProjectEditor Editor { get; }
-    public bool IsEmpty => Projects.Count == 0;
+    public bool IsEmpty => _data.Projects.Value.Projects.Count == 0 && _data.Projects.Value.Folders.Count == 0;
 
     public ProjectsViewModel(DataService data, GitService git, ConnectionHub hub, NavigationService nav, SessionStore sessions, ToastService toast)
     {
         _data = data; _git = git; _hub = hub; _nav = nav; _sessions = sessions; _toast = toast;
         Editor = new ProjectEditor(git, hub);
         Editor.Saved += SaveProjectAsync;
-        Projects.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
+        Rows.CollectionChanged += (_, _) => OnPropertyChanged(nameof(IsEmpty));
     }
 
     private async Task SaveProjectAsync(CopitProject p)
@@ -134,8 +165,9 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
         {
             existing.Name = p.Name; existing.EpicKey = p.EpicKey; existing.SourceFolder = p.SourceFolder;
             existing.GitLabProject = p.GitLabProject; existing.Color = p.Color; existing.Instructions = p.Instructions;
+            ProjectFolders.Move(_data.Projects.Value, existing, p.Group);
         }
-        else list.Add(p);
+        else { list.Add(p); ProjectFolders.Add(_data.Projects.Value, p.Group); }
         await _data.Projects.SaveAsync();
         _data.RaiseProjectsChanged();
         _toast.Success(existing == null ? "Projekt angelegt" : "Projekt gespeichert", p.Name);
@@ -145,19 +177,98 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
 
     public void OnActivated(object? parameter)
     {
-        Load();
-        if (parameter is "new") Editor.Open(null);
+        Load(refresh: true);
+        Editor.KnownGroups = ProjectFolders.AllPaths(_data.Projects.Value);
+        if (parameter is "new") { Editor.Group = ""; Editor.Open(null); }
+        else if (parameter is string s && s.StartsWith("new:")) { Editor.Group = s[4..]; Editor.Open(null); }
     }
 
-    private void Load()
+    /// <summary>Baut die gruppierte Liste neu auf. Karten (Git/Jira-Daten) werden wiederverwendet, nur bei refresh neu geladen.</summary>
+    private void Load(bool refresh = false)
     {
-        Projects.Clear();
-        foreach (var p in _data.Projects.Value.Projects.OrderByDescending(p => p.LastOpened))
+        Rows.Clear();
+        if (refresh) _cards.Clear();
+        foreach (var r in ProjectFolders.Flatten(_data.Projects.Value))
         {
-            var card = new ProjectCard { Project = p, Sessions = _sessions.ForProject(p.Id).Count() };
-            Projects.Add(card);
-            _ = EnrichAsync(card);
+            if (r.IsFolder) { Rows.Add(new ProjectListRow { IsFolder = true, FolderPath = r.Path, FolderName = r.Name, Count = r.Count, Collapsed = r.Collapsed, Depth = r.Depth }); continue; }
+            var p = r.Project!;
+            if (!_cards.TryGetValue(p.Id, out var card))
+            {
+                _cards[p.Id] = card = new ProjectCard { Project = p, Sessions = _sessions.ForProject(p.Id).Count() };
+                _ = EnrichAsync(card);
+            }
+            Rows.Add(new ProjectListRow { Card = card, Depth = r.Depth, FolderPath = r.Path });
         }
+        OnPropertyChanged(nameof(IsEmpty));
+    }
+
+    private async Task SaveFoldersAsync()
+    {
+        await _data.Projects.SaveAsync();
+        _data.RaiseProjectsChanged();
+        Editor.KnownGroups = ProjectFolders.AllPaths(_data.Projects.Value);
+        Load();
+    }
+
+    [RelayCommand]
+    private async Task ToggleFolderAsync(ProjectListRow row)
+    {
+        ProjectFolders.Toggle(_data.Projects.Value, row.FolderPath);
+        await SaveFoldersAsync();
+    }
+
+    [RelayCommand]
+    private async Task NewFolderAsync(ProjectListRow? parent)
+    {
+        var prefix = parent?.IsFolder == true ? parent.FolderPath + "/" : "";
+        var name = await Dialogs.Prompt("Neuer Ordner", "Name, Unterordner mit / (z. B. Kunde A/Backend)", prefix);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        ProjectFolders.Add(_data.Projects.Value, name);
+        await SaveFoldersAsync();
+    }
+
+    [RelayCommand]
+    private async Task FolderMenuAsync(ProjectListRow row)
+    {
+        var pick = await Dialogs.Choose(row.FolderPath, "Projekt in diesem Ordner anlegen", "Unterordner anlegen", "Umbenennen / verschieben", "Ordner löschen");
+        switch (pick)
+        {
+            case "Projekt in diesem Ordner anlegen": Editor.Group = row.FolderPath; Editor.Open(null); break;
+            case "Unterordner anlegen": await NewFolderAsync(row); break;
+            case "Umbenennen / verschieben":
+                var n = await Dialogs.Prompt("Ordner umbenennen", "Neuer Pfad, Unterordner mit /", row.FolderPath);
+                if (string.IsNullOrWhiteSpace(n)) return;
+                try { ProjectFolders.Rename(_data.Projects.Value, row.FolderPath, n); await SaveFoldersAsync(); }
+                catch (Exception e) { _toast.Show("Nicht möglich", e.Message, NoticeLevel.Warning); }
+                break;
+            case "Ordner löschen":
+                if (!await Dialogs.Confirm("Ordner löschen", $"„{row.FolderPath}“ löschen? Die {row.Count} Projekte darin rücken eine Ebene nach oben.", "Löschen")) return;
+                ProjectFolders.Delete(_data.Projects.Value, row.FolderPath);
+                await SaveFoldersAsync();
+                break;
+        }
+    }
+
+    [RelayCommand]
+    private async Task MoveProjectAsync(ProjectListRow row)
+    {
+        if (row.Card == null) return;
+        var options = new List<string> { "Ohne Ordner", "Neuer Ordner…" };
+        options.AddRange(ProjectFolders.AllPaths(_data.Projects.Value));
+        var pick = await Dialogs.Choose($"{row.Card.Project.Name} verschieben nach", [.. options]);
+        if (pick == null) return;
+        if (pick == "Neuer Ordner…") { pick = await Dialogs.Prompt("Neuer Ordner", "Name, Unterordner mit /", row.FolderPath); if (string.IsNullOrWhiteSpace(pick)) return; }
+        await MoveToAsync(row.Card.Project, pick == "Ohne Ordner" ? "" : pick);
+    }
+
+    public CopitProject? FindProject(string id) => _data.Projects.Value.Projects.FirstOrDefault(p => p.Id == id);
+
+    /// <summary>Drag &amp; Drop: Projekt auf einen Ordner (oder auf "Ohne Ordner") ziehen.</summary>
+    public async Task MoveToAsync(CopitProject p, string folder)
+    {
+        ProjectFolders.Move(_data.Projects.Value, p, folder);
+        await SaveFoldersAsync();
+        _toast.Success("Verschoben", $"{p.Name} → {(p.Group.Length > 0 ? p.Group : "ohne Ordner")}");
     }
 
     private async Task EnrichAsync(ProjectCard card)
@@ -189,6 +300,6 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
     }
 
     [RelayCommand] private void New() => Editor.Open(null);
-    [RelayCommand] private void Open(ProjectCard c) => _nav.Go(Routes.Project, c.Project.Id);
-    [RelayCommand] private void OpenSession(ProjectCard c) => _nav.Go(Routes.Session, c.Project);
+    [RelayCommand] private void Open(ProjectListRow r) { if (r.Card != null) _nav.Go(Routes.Project, r.Card.Project.Id); }
+    [RelayCommand] private void OpenSession(ProjectListRow r) { if (r.Card != null) _nav.Go(Routes.Session, r.Card.Project); }
 }

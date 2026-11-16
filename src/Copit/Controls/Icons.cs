@@ -18,6 +18,7 @@ public static class IconSet
         ["home"] = D("M3 10 L12 3 L21 10 V21 H3 Z M9 21 V14 H15 V21"),
         ["calendar"] = D("M3 5 H21 V21 H3 Z M3 10 H21 M8 3 V7 M16 3 V7"),
         ["folder"] = D("M3 5 H9 L11 7 H21 V19 H3 Z"),
+        ["more"] = D("M4 11 H6 V13 H4 Z M11 11 H13 V13 H11 Z M18 11 H20 V13 H18 Z"),
         ["chat"] = D("M4 4 H20 V16 H10 L5 20 V16 H4 Z"),
         ["grid"] = D("M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z"),
         ["sliders"] = D("M3 6 H21 M3 12 H21 M3 18 H21 M8 4 V8 M16 10 V14 M10 16 V20"),

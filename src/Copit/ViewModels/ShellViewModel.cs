@@ -13,10 +13,21 @@ public partial class SidebarProject : ObservableObject
 {
     public CopitProject Project { get; init; } = null!;
     [ObservableProperty] public partial bool IsRunning { get; set; }
+    // Ordner-Kopf (gruppierte Seitenleiste)
+    public bool IsFolder { get; init; }
+    public bool IsProject => !IsFolder;
+    public string FolderPath { get; init; } = "";
+    public string FolderName { get; init; } = "";
+    public int Count { get; init; }
+    public bool Collapsed { get; init; }
+    public string Chevron => Collapsed ? "chevron-right" : "chevron-down";
+    public int Depth { get; init; }
+    public Thickness Indent => new(6 + Depth * 14, 5, 6, 5);
     public string Ago
     {
         get
         {
+            if (IsFolder) return "";
             var d = DateTime.Now - Project.LastOpened;
             return d.TotalMinutes < 60 ? (d.TotalMinutes < 2 ? "NOW" : $"{(int)d.TotalMinutes}M") : d.TotalHours < 24 ? $"{(int)d.TotalHours}H" : $"{(int)d.TotalDays}D";
         }
@@ -71,12 +82,27 @@ public partial class ShellViewModel : ObservableObject
     public void LoadProjects()
     {
         Projects.Clear();
-        foreach (var p in _data.Projects.Value.Projects.OrderByDescending(p => p.LastOpened).Take(14))
-            Projects.Add(new SidebarProject
-            {
-                Project = p,
-                IsRunning = _store.ForProject(p.Id).Any(s => _sessions.Host(s).IsRunning)
-            });
+        var d = _data.Projects.Value;
+        bool Running(CopitProject p) => _store.ForProject(p.Id).Any(s => _sessions.Host(s).IsRunning);
+        // Ohne Ordner: die zuletzt genutzten Projekte; mit Ordnern: gruppiert und aufklappbar (Zustand wie in der Projektliste)
+        if (ProjectFolders.AllPaths(d).Count == 0)
+        {
+            foreach (var p in d.Projects.OrderByDescending(p => p.LastOpened).Take(14))
+                Projects.Add(new SidebarProject { Project = p, IsRunning = Running(p) });
+            return;
+        }
+        foreach (var r in ProjectFolders.Flatten(d))
+            Projects.Add(r.IsFolder
+                ? new SidebarProject { IsFolder = true, FolderPath = r.Path, FolderName = r.Name, Count = r.Count, Collapsed = r.Collapsed, Depth = r.Depth }
+                : new SidebarProject { Project = r.Project!, Depth = r.Depth, IsRunning = Running(r.Project!) });
+    }
+
+    [RelayCommand]
+    private async Task ToggleFolderAsync(SidebarProject f)
+    {
+        ProjectFolders.Toggle(_data.Projects.Value, f.FolderPath);
+        await _data.Projects.SaveAsync();
+        _data.RaiseProjectsChanged();
     }
 
     [RelayCommand]
@@ -92,7 +118,7 @@ public partial class ShellViewModel : ObservableObject
 
     private void UpdateRunning()
     {
-        MainThread.BeginInvokeOnMainThread(() => { foreach (var p in Projects) p.IsRunning = _store.ForProject(p.Project.Id).Any(s => _sessions.Host(s).IsRunning); });
+        MainThread.BeginInvokeOnMainThread(() => { foreach (var p in Projects.Where(x => x.IsProject)) p.IsRunning = _store.ForProject(p.Project.Id).Any(s => _sessions.Host(s).IsRunning); });
         MainThread.BeginInvokeOnMainThread(() =>
         {
             var n = _sessions.RunningCount;
