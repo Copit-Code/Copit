@@ -21,10 +21,12 @@ public partial class MainPage : ContentPage
         (Routes.Board, "list", "Agents", false),
         (Routes.Session, "chat", "Session", false),
         (Routes.Activity, "activity", "Activity", false),
-        (Routes.Budgets, "package", "Budgets", false),
+        (Routes.Budgets, "zap", "Budgets", false),
         (Routes.Projects, "folder", "Projekte", false),
         (Routes.Automations, "flow", "Automationen", false),
+        (Routes.Docs, "book", "Doku", false),
         (Routes.Tools, "grid", "Tools", false),
+        (Routes.Extensions, "package", "Extensions", true),
         (Routes.Customize, "lock", "Customize", true),
         (Routes.Settings, "sliders", "Einstellungen", true),
     ];
@@ -35,6 +37,7 @@ public partial class MainPage : ContentPage
         _sp = sp; _nav = nav;
         InitializeComponent();
         BindingContext = shell;
+        Overlay.Host = OverlayHost;
 
         foreach (var item in NavItems)
         {
@@ -54,7 +57,14 @@ public partial class MainPage : ContentPage
             var start = Environment.GetEnvironmentVariable("COPIT_START_ROUTE");
             Show(!string.IsNullOrEmpty(start) ? start : settings.JiraConfigured || settings.GitLabConfigured ? Routes.Home : Routes.Settings, null);
             shell.StartClock();
-            sp.GetRequiredService<SessionManager>(); // verbindet Agents mit dem Automations-Motor
+            var mgr = sp.GetRequiredService<SessionManager>(); // verbindet Agents mit dem Automations-Motor
+            mgr.Warn += (t, m) => toasts.Show(t, m, NoticeLevel.Warning);
+            automations.DocsUpdater = async (repo, ai, commit) =>
+            {
+                var project = data.Projects.Value.Projects.FirstOrDefault(p => string.Equals(p.SourceFolder.TrimEnd('\\', '/'), repo.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                              ?? throw new InvalidOperationException("Kein Copit-Projekt für " + repo);
+                return await mgr.UpdateDocsAsync(project, sp.GetRequiredService<DocsService>(), ai, commit);
+            };
             automations.Start();
             StartBudgetWatch(data, toasts);
             StartUpdateWatch(toasts);
@@ -73,6 +83,8 @@ public partial class MainPage : ContentPage
             {
                 var r = await updates.CheckAsync();
                 if (r != null) toasts.Show($"Copit {r.Tag} ist verfügbar", "Klicken zum Installieren", NoticeLevel.Info, "update", r.Tag);
+                var ext = _sp.GetRequiredService<ExtensionService>();
+                if (await ext.CheckUpdatesAsync() is > 0 and var n) toasts.Show($"{n} Extension-Update(s) verfügbar", "Unter Extensions aktualisieren", NoticeLevel.Info, "extensions", null);
             }
             catch { /* offline oder kein Token – still */ }
         }
@@ -151,6 +163,8 @@ public partial class MainPage : ContentPage
             Routes.Budgets => _sp.GetRequiredService<BudgetsView>(),
             Routes.Automations => _sp.GetRequiredService<AutomationsView>(),
             Routes.Customize => _sp.GetRequiredService<CustomizeView>(),
+            Routes.Docs => _sp.GetRequiredService<DocsView>(),
+            Routes.Extensions => _sp.GetRequiredService<ExtensionsView>(),
             _ => _sp.GetRequiredService<SettingsView>(),
         };
         v.IsVisible = false;
@@ -236,6 +250,7 @@ public partial class MainPage : ContentPage
                     case "book": _nav.Go(Routes.Time, DateOnly.Parse(t.ActionArg!)); break;
                     case "project": _nav.Go(Routes.Project, t.ActionArg); break;
                     case "automation": _nav.Go(Routes.Automations); break;
+                    case "extensions": _nav.Go(Routes.Extensions); break;
                     case "update":
                         _ = Task.Run(async () =>
                         {

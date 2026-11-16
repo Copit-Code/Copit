@@ -41,11 +41,26 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
 
     public double TargetFor(DateOnly d) => data.PeekDay(d)?.TargetHours ?? (IsWorkDay(d) ? T.MinHoursPerDay : 0);
 
-    /// <summary>Gebuchte Stunden pro Tag im Zeitraum (aus Jira).</summary>
+    /// <summary>Ohne Jira bucht Copit intern (lokal gespeichert, gleiche Ansicht).</summary>
+    public bool LocalMode => hub.Jira == null;
+
+    /// <summary>Eigene Buchungen im Zeitraum – aus Jira oder intern.</summary>
+    public async Task<List<JiraWorklog>> GetWorklogsAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        if (hub.Jira is { } jira) return await jira.GetMyWorklogsAsync(from, to, ct);
+        return data.LocalWorklogs.Value.Worklogs.Where(w => DateOnly.FromDateTime(w.Started) >= from && DateOnly.FromDateTime(w.Started) <= to).OrderBy(w => w.Started).ToList();
+    }
+
+    public async Task DeleteLocalAsync(JiraWorklog w)
+    {
+        data.LocalWorklogs.Value.Worklogs.RemoveAll(x => x.Id == w.Id);
+        await data.LocalWorklogs.SaveAsync();
+    }
+
+    /// <summary>Gebuchte Stunden pro Tag im Zeitraum (Jira oder intern).</summary>
     public async Task<Dictionary<DateOnly, double>> GetBookedHoursAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
     {
-        var jira = hub.RequireJira;
-        var logs = await jira.GetMyWorklogsAsync(from, to, ct);
+        var logs = await GetWorklogsAsync(from, to, ct);
         return logs.GroupBy(l => DateOnly.FromDateTime(l.Started))
                    .ToDictionary(g => g.Key, g => g.Sum(x => x.TimeSpentSeconds) / 3600.0);
     }
@@ -66,6 +81,7 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         ctx.Facts = data.TimeMemory.Value.Facts.ToList();
 
         var jira = hub.Jira;
+        if (jira == null) ctx.ExistingWorklogs = await GetWorklogsAsync(day, day, ct);
         if (jira != null)
         {
             progress("Jira · lese bereits gebuchte Zeiten");
@@ -87,7 +103,7 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
                 catch { /* manche JQL-Funktionen (ScriptRunner) sind nicht überall verfügbar */ }
             }
         }
-        else ctx.Warnings.Add("Jira ist nicht konfiguriert.");
+        else ctx.Warnings.Add("Ohne Jira: Vorschläge aus Commits, Sessions und Notizen – gebucht wird intern.");
 
         var gl = hub.GitLab;
         if (gl != null && src.GitLab)
@@ -414,25 +430,39 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         await data.Accounts.SaveAsync();
     }
 
-    public bool AccountRequired => settings.Settings.Jira.UseTempo || !string.IsNullOrWhiteSpace(settings.Settings.Jira.AccountFieldId);
+    public bool AccountRequired => !LocalMode && (settings.Settings.Jira.UseTempo || !string.IsNullOrWhiteSpace(settings.Settings.Jira.AccountFieldId));
 
     // ------------------------------------------------------------------ Buchen
 
     public async Task<List<(BookingSuggestion Item, string? Error)>> BookAsync(DateOnly day, IEnumerable<BookingSuggestion> items,
         IEnumerable<JiraWorklog> existing, Action<string> progress, CancellationToken ct = default)
     {
-        var jira = hub.RequireJira;
+        var jira = hub.Jira;
         var start = day.ToDateTime(TimeOnly.TryParse(T.DayStart, out var t) ? t : new TimeOnly(8, 0));
         var lastEnd = existing.Select(w => w.Started.AddSeconds(w.TimeSpentSeconds)).DefaultIfEmpty(start).Max();
         if (lastEnd > start && DateOnly.FromDateTime(lastEnd) == day) start = lastEnd;
         var results = new List<(BookingSuggestion, string?)>();
-        foreach (var b in items.Where(i => !i.Booked && i.Hours > 0 && i.IssueKey.Length > 0))
+        foreach (var b in items.Where(i => !i.Booked && i.Hours > 0 && (i.IssueKey.Length > 0 || jira == null)))
         {
             progress($"Buche {b.Hours:0.##}h auf {b.IssueKey}{(string.IsNullOrWhiteSpace(b.Account) ? "" : $" · Account {b.Account}")}");
             var seconds = (long)Math.Round(b.Hours * 3600);
             if (AccountRequired && string.IsNullOrWhiteSpace(b.Account))
             {
                 results.Add((b, "Kein Account hinterlegt – nicht gebucht."));
+                continue;
+            }
+            if (jira == null)
+            {
+                // Intern buchen: auch ohne Ticket (Thema statt Key)
+                data.LocalWorklogs.Value.Worklogs.Add(new JiraWorklog
+                {
+                    Id = "local-" + Guid.NewGuid().ToString("N")[..10], IssueKey = b.IssueKey, IssueSummary = b.IssueKey.Length > 0 ? b.IssueSummary : b.Topic ?? b.Repo ?? "Ohne Ticket",
+                    Started = start, TimeSpentSeconds = seconds, Comment = b.Comment,
+                });
+                b.Booked = true;
+                if (b.IssueKey.Length > 0) LearnTopic(data.TimeMemory.Value.Topics, b.Topic, b.Repo, b.IssueKey);
+                results.Add((b, null));
+                start = start.AddSeconds(seconds);
                 continue;
             }
             try
@@ -446,6 +476,7 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
             catch (Exception e) { results.Add((b, e.Message)); }
         }
         await data.TimeMemory.SaveAsync();
+        if (jira == null) await data.LocalWorklogs.SaveAsync();
         return results;
     }
 

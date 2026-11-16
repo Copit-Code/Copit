@@ -139,7 +139,6 @@ public partial class ShellViewModel : ObservableObject
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
         var target = _time.TargetFor(today);
-        if (_hub.Jira == null) { TodayHours = $"–/{target:0.#}h"; return; }
         try
         {
             var booked = (await _time.GetBookedHoursAsync(today, today)).GetValueOrDefault(today);

@@ -29,6 +29,8 @@ public static class Routes
     public const string Budgets = "budgets";
     public const string Automations = "automations";
     public const string Customize = "customize";
+    public const string Docs = "docs";
+    public const string Extensions = "extensions";
 }
 
 /// <summary>Einfache View-Navigation innerhalb des Hauptfensters (Views bleiben im Speicher → Zustand bleibt erhalten).</summary>
@@ -62,11 +64,17 @@ public static class Dialogs
 {
     private static Page Page => Application.Current!.Windows[0].Page!;
 
-    public static Task Alert(string title, string message) => Page.DisplayAlert(title, message, "OK");
-    public static Task<bool> Confirm(string title, string message, string ok = "Ja", string cancel = "Abbrechen") => Page.DisplayAlert(title, message, ok, cancel);
+    // Eigene Dialoge im Copit-Stil (Fallback: Windows-Standard, solange die Oberfläche noch nicht steht)
+    public static Task Alert(string title, string message) => Copit.Controls.Overlay.Host != null ? Copit.Controls.Overlay.Alert(title, message) : Page.DisplayAlert(title, message, "OK");
+    public static Task<bool> Confirm(string title, string message, string ok = "Ja", string cancel = "Abbrechen") =>
+        Copit.Controls.Overlay.Host != null ? Copit.Controls.Overlay.Confirm(title, message, ok, cancel) : Page.DisplayAlert(title, message, ok, cancel);
     public static Task<string?> Prompt(string title, string message, string initial = "", string placeholder = "", Keyboard? keyboard = null)
-        => Page.DisplayPromptAsync(title, message, "OK", "Abbrechen", placeholder, -1, keyboard ?? Keyboard.Text, initial);
-    public static Task<string?> Choose(string title, params string[] options) => Page.DisplayActionSheet(title, "Abbrechen", null, options);
+        => Copit.Controls.Overlay.Host != null ? Copit.Controls.Overlay.Prompt(title, message, initial, placeholder)
+            : Page.DisplayPromptAsync(title, message, "OK", "Abbrechen", placeholder, -1, keyboard ?? Keyboard.Text, initial);
+    public static Task<string?> Choose(string title, params string[] options) =>
+        Copit.Controls.Overlay.Host != null ? Copit.Controls.Overlay.Choose(title, options) : Page.DisplayActionSheet(title, "Abbrechen", null, options);
+    /// <summary>Dropdown direkt unter einem Element.</summary>
+    public static Task<string?> ChooseAt(VisualElement anchor, string? selected, params string[] options) => Copit.Controls.Overlay.Choose("", options, anchor, selected);
 
     public static async Task<string?> PickFolderAsync()
     {

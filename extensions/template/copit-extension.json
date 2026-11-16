@@ -1,0 +1,11 @@
+{
+  "id": "meine-extension",
+  "name": "Meine Extension",
+  "version": "0.1.0",
+  "description": "Kurzbeschreibung",
+  "author": "",
+  "agentTemplates": [],
+  "actions": [],
+  "automations": [],
+  "permissions": []
+}

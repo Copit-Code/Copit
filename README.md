@@ -22,8 +22,18 @@ Neuestes Release unter **Releases** öffnen und `Copit-Setup-X.Y.Z.exe` ausführ
 Alternativ `Copit-X.Y.Z-win-x64-portable.zip` entpacken und `Copit.exe` starten.
 
 Updates: Copit prüft beim Start und alle 6 Stunden das neueste Release, lädt den Installer und
-aktualisiert sich still (Copit startet danach neu). Weil das Repository privat ist, unter
-**Customize → Updates** einen GitHub-Token mit „Contents: Read-only“ für dieses Repo hinterlegen.
+aktualisiert sich still (Copit startet danach neu). Das Repository ist öffentlich – ein Token ist nicht nötig.
+Nur wenn du Releases aus einem privaten Fork beziehst: unter **Customize → Updates** Repo und einen
+GitHub-Token mit „Contents: Read-only“ hinterlegen.
+
+## Doku, Extensions, ohne Jira
+
+- **Doku:** Copit → Doku erzeugt pro Projekt verlinktes Markdown unter `/docs` im Repo – Code & Architektur,
+  Arbeit & Verlauf (Tickets ↔ Commits ↔ MRs ↔ Agent-Sessions ↔ Zeitbuchungen) und Projektwissen.
+  Ein Doku-Agent kann Beschreibungen und Entscheidungen ergänzen; er darf nur unter `docs/` schreiben.
+- **Extensions:** Agent-Vorlagen, Automations-Aktionen, Rezepte und Regeln aus GitHub – siehe [docs/extensions.md](docs/extensions.md).
+- **Ohne Jira:** Die Zeitbuchung funktioniert auch ohne Jira-Verbindung; gebucht wird dann intern
+  (`%LOCALAPPDATA%\Copit\worklogs.json`), auch ohne Ticket.
 
 ## Installation – VSCodium-Extension
 

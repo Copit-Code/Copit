@@ -1,0 +1,26 @@
+name: Copit-Extension veröffentlichen
+
+# Tag "vX.Y.Z" pushen → <id>.copit.zip als Release-Asset. Copit installiert und aktualisiert daraus.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version setzen und packen
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          ID=$(jq -r .id copit-extension.json)
+          jq --arg v "$V" '.version = $v' copit-extension.json > m.json && mv m.json copit-extension.json
+          zip -r "$ID.copit.zip" . -x ".git/*" ".github/*" "*.copit.zip"
+          echo "ZIP=$ID.copit.zip" >> $GITHUB_ENV
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP }}
+          generate_release_notes: true

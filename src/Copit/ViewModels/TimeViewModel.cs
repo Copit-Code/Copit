@@ -198,6 +198,17 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     public bool HasSuggestions => Suggestions.Count > 0;
     public bool IsClaude => Provider == AiProvider.Claude;
     public bool IsCopilot => Provider == AiProvider.Copilot;
+    public string BookButtonText => _time.LocalMode ? "Intern buchen" : "In Jira buchen";
+    public bool IsLocalMode => _time.LocalMode;
+
+    [RelayCommand]
+    private async Task DeleteWorklogAsync(JiraWorklog w)
+    {
+        if (!_time.LocalMode || !w.Id.StartsWith("local-")) return;
+        await _time.DeleteLocalAsync(w);
+        if (Selected != null) await LoadMonthAsync(Selected.Date);
+    }
+
     public bool CanBook => HasSuggestions && !IsWorking && !IsBooking && Suggestions.Any(s => !s.Booked);
     public string BookedText => Selected == null ? "" : $"{Selected.Booked:0.##}h von {Selected.Target:0.##}h gebucht";
 
@@ -245,6 +256,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
 
     public void OnActivated(object? parameter)
     {
+        OnPropertyChanged(nameof(BookButtonText)); OnPropertyChanged(nameof(IsLocalMode));
         MinHours = _settings.Settings.Time.MinHoursPerDay.ToString("0.##", De);
         Rules.Clear();
         foreach (var r in _settings.Settings.Time.RuleSets) Rules.Add(r);
@@ -289,7 +301,6 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         var cell = Days.FirstOrDefault(c => c.Date == sel) ?? Days.FirstOrDefault(c => c.IsToday && c.InMonth);
         if (cell != null) SelectDay(cell); else Selected = null;
 
-        if (_hub.Jira == null) { MonthStats = "Jira nicht konfiguriert"; return; }
         LoadingMonth = true;
         try
         {
@@ -340,10 +351,9 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     private async Task LoadWorklogsAsync(DateOnly d)
     {
         Worklogs.Clear();
-        if (_hub.Jira == null) return;
         try
         {
-            var logs = await _hub.Jira.GetMyWorklogsAsync(d, d);
+            var logs = await _time.GetWorklogsAsync(d, d);
             if (Selected?.Date != d) return;
             Worklogs.Clear();
             foreach (var l in logs) Worklogs.Add(l);
@@ -541,10 +551,10 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     [RelayCommand]
     private async Task BookAsync()
     {
-        if (Selected == null || _ctx == null && _hub.Jira == null) return;
+        if (Selected == null) return;
         var unassigned = Suggestions.Where(s => !s.Booked && s.NeedsTicket && s.Model.Hours > 0).ToList();
-        if (unassigned.Count > 0 && !await Dialogs.Confirm("Blöcke ohne Ticket", $"{unassigned.Count} Block/Blöcke ({unassigned.Sum(u => u.Model.Hours):0.##}h) haben noch kein Ticket und werden nicht gebucht. Trotzdem fortfahren?", "Weiter")) return;
-        var open = Suggestions.Where(s => !s.Booked && s.HasTicket && s.Model.Hours > 0).ToList();
+        if (unassigned.Count > 0 && !_time.LocalMode && !await Dialogs.Confirm("Blöcke ohne Ticket", $"{unassigned.Count} Block/Blöcke ({unassigned.Sum(u => u.Model.Hours):0.##}h) haben noch kein Ticket und werden nicht gebucht. Trotzdem fortfahren?", "Weiter")) return;
+        var open = Suggestions.Where(s => !s.Booked && (s.HasTicket || _time.LocalMode) && s.Model.Hours > 0).ToList();
         if (open.Count == 0) return;
 
         // Fehlende Accounts erfragen – Antworten werden gemerkt
@@ -559,7 +569,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         }
 
         var total = open.Sum(s => s.Model.Hours);
-        if (!await Dialogs.Confirm("Jetzt buchen?", $"{open.Count} Buchung(en) mit insgesamt {total:0.##}h am {Selected.Date:dd.MM.yyyy} in Jira eintragen?", "Buchen")) return;
+        if (!await Dialogs.Confirm("Jetzt buchen?", $"{open.Count} Buchung(en) mit insgesamt {total:0.##}h am {Selected.Date:dd.MM.yyyy} {(_time.LocalMode ? "intern speichern (ohne Jira)" : "in Jira eintragen")}?", "Buchen")) return;
 
         IsBooking = true;
         try

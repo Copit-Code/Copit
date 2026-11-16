@@ -12,7 +12,8 @@
 
 		<ApplicationTitle>Copit</ApplicationTitle>
 		<ApplicationId>dev.copit.ide</ApplicationId>
-		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+		<ApplicationDisplayVersion>0.3.0</ApplicationDisplayVersion>
+		<Version>0.3.0</Version>
 		<ApplicationVersion>1</ApplicationVersion>
 
 		<WindowsPackageType>None</WindowsPackageType>

@@ -75,6 +75,20 @@ public class AiSettings
     public bool UseWorktrees { get; set; } = true;
     /// <summary>Copit-Regeln und Claude-settings.json als --allowedTools/--disallowedTools mitgeben.</summary>
     public bool ApplyPermissionRules { get; set; } = true;
+    /// <summary>Tageslimit für Copit-Agents mit Claude (0 = aus).</summary>
+    public DailyLimit ClaudeLimit { get; set; } = new() { Unit = "usd" };
+    /// <summary>Tageslimit für Copit-Agents mit Copilot (0 = aus). Copilot meldet keine Kosten → Stunden oder Läufe.</summary>
+    public DailyLimit CopilotLimit { get; set; } = new() { Unit = "hours" };
+}
+
+public class DailyLimit
+{
+    public double Amount { get; set; }
+    /// <summary>usd | hours | runs</summary>
+    public string Unit { get; set; } = "usd";
+    public string? WarnedDay { get; set; }
+
+    public string Format(double v) => Unit switch { "usd" => $"${v:0.00}", "hours" => $"{v:0.#} h", _ => $"{v:0} Läufe" };
 }
 
 public class TimeSettings

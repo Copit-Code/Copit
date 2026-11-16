@@ -16,10 +16,11 @@ public class AutomationsView : ContentView, IActivatable
     private Automation? _sel;
     private Automation? _draft;
     private bool _visible;
+    private static AutomationService? _engineStatic;
 
     public AutomationsView(AutomationService engine, DataService data, SessionManager mgr, ToastService toast, NavigationService nav)
     {
-        _engine = engine; _data = data; _mgr = mgr; _toast = toast;
+        _engine = engine; _data = data; _mgr = mgr; _toast = toast; _engineStatic = engine;
         BackgroundColor = C("Bg");
         Content = _root;
         engine.RunsChanged += () => MainThread.BeginInvokeOnMainThread(() => { if (_visible && _draft == null) Render(); });
@@ -35,7 +36,7 @@ public class AutomationsView : ContentView, IActivatable
     }
 
     private static string TriggerLabel(string t) => AutomationService.Triggers.FirstOrDefault(x => x.Type == t)?.Label ?? t;
-    private static string ActionLabel(string t) => AutomationService.Actions.FirstOrDefault(x => x.Type == t)?.Label ?? t;
+    private static string ActionLabel(string t) => _engineStatic?.AllActions.FirstOrDefault(x => x.Type == t)?.Label ?? t;
 
     private void Render()
     {
@@ -183,10 +184,11 @@ public class AutomationsView : ContentView, IActivatable
         var acts = Stack(12);
         foreach (var a in d.Actions.ToList())
         {
-            var adef = AutomationService.Actions.FirstOrDefault(x => x.Type == a.Type) ?? AutomationService.Actions[0];
-            var box = Stack(8, Row((Pick(AutomationService.Actions.Select(x => $"{x.Group} · {x.Label}").ToList(), Array.IndexOf(AutomationService.Actions, adef), i =>
+            var all = _engine.AllActions.ToList();
+            var adef = all.FirstOrDefault(x => x.Type == a.Type) ?? all[0];
+            var box = Stack(8, Row((Pick(all.Select(x => $"{x.Group} · {x.Label}").ToList(), all.IndexOf(adef), i =>
             {
-                a.Type = AutomationService.Actions[i].Type;
+                a.Type = all[i].Type;
                 a.Params = [];
                 Render();
             }), Star), (IconBtn("x", () => { d.Actions.Remove(a); Render(); }, "Entfernen", 13), Auto)));

@@ -84,6 +84,8 @@ public static class MauiProgram
         s.AddSingleton<AutomationService>();
         s.AddSingleton<PermissionService>();
         s.AddSingleton<UpdateService>();
+        s.AddSingleton<ExtensionService>();
+        s.AddSingleton<DocsService>();
         s.AddSingleton<ActivityService>(_ => new ActivityService());
         // App
         s.AddSingleton<NavigationService>();
@@ -113,6 +115,8 @@ public static class MauiProgram
         s.AddSingleton<BudgetsView>();
         s.AddSingleton<AutomationsView>();
         s.AddSingleton<CustomizeView>();
+        s.AddSingleton<DocsView>();
+        s.AddSingleton<ExtensionsView>();
 
         return builder.Build();
     }

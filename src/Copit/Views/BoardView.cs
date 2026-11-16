@@ -14,15 +14,16 @@ public class BoardView : ContentView, IActivatable
     private readonly SettingsService _settings;
     private readonly NavigationService _nav;
     private readonly ToastService _toast;
+    private readonly ExtensionService _ext;
     private readonly Grid _root = new();
     private readonly Grid _overlay = new() { IsVisible = false, BackgroundColor = Color.FromArgb("#D0100C0A"), ZIndex = 10 };
     private string _projectFilter = "";
     private bool _visible;
     private IDispatcherTimer? _timer;
 
-    public BoardView(SessionManager mgr, DataService data, SettingsService settings, NavigationService nav, ToastService toast)
+    public BoardView(SessionManager mgr, DataService data, SettingsService settings, NavigationService nav, ToastService toast, ExtensionService ext)
     {
-        _mgr = mgr; _data = data; _settings = settings; _nav = nav; _toast = toast;
+        _mgr = mgr; _data = data; _settings = settings; _nav = nav; _toast = toast; _ext = ext;
         BackgroundColor = C("Bg");
         Content = new Grid { Children = { _root, _overlay } };
         mgr.AgentsChanged += () => { if (_visible) Render(); };
@@ -130,7 +131,9 @@ public class BoardView : ContentView, IActivatable
         var p = _data.Project(a.ProjectId);
         var color = Hex(AgentStatusInfo.Color(a.Status));
 
-        var top = Row((Text(a.Title, 13, "Text", true), Star), (IconBtn("list", () => _ = Menu(a), "Aktionen", 13), Auto));
+        IconButton? menuBtn = null;
+        menuBtn = IconBtn("list", () => _ = Menu(a, menuBtn), "Aktionen", 13);
+        var top = Row((Text(a.Title, 13, "Text", true), Star), (menuBtn, Auto));
         var meta = new HorizontalStackLayout { Spacing = 8 };
         if (a.Ticket != null) meta.Add(Mono(a.Ticket, 10.5, "Accent", true));
         if (a.Branch != null) meta.Add(HStack(4, Glyph("branch", 11, "Muted"), Mono(a.Branch, 10.5, "Muted")));
@@ -181,7 +184,7 @@ public class BoardView : ContentView, IActivatable
         return card;
     }
 
-    private async Task Menu(ChatSession a)
+    private async Task Menu(ChatSession a, VisualElement? anchor = null)
     {
         var h = _mgr.Host(a);
         var opts = new List<string> { "Öffnen" };
@@ -189,7 +192,7 @@ public class BoardView : ContentView, IActivatable
         opts.AddRange(AgentStatusInfo.Columns.Where(c => c.Status != a.Status).Select(c => "→ " + c.Title));
         opts.Add("Archivieren");
         opts.Add("Löschen");
-        var pick = await Dialogs.Choose(a.Title, [.. opts]);
+        var pick = anchor != null ? await Copit.Controls.Overlay.Choose(a.Title, opts, anchor) : await Dialogs.Choose(a.Title, [.. opts]);
         if (pick == null) return;
         if (pick == "Öffnen") _nav.Go(Routes.Session, h);
         else if (pick == "Stoppen") h.Stop();
@@ -212,12 +215,29 @@ public class BoardView : ContentView, IActivatable
         var mode = AgentMode.Edit;
         var worktree = _settings.Settings.Ai.UseWorktrees;
         var startNow = true;
+        List<string> extraTools = [];
+        var templates = _ext.AgentTemplates.ToList();
+        var templateIndex = 0;
 
         var form = new VerticalStackLayout { Spacing = 12 };
         void Build()
         {
             form.Children.Clear();
             form.Add(Row((Stack(2, Caption("Neuer Agent"), H2("Auftrag anlegen")), Star), (IconBtn("x", Close, "Schließen"), Auto)));
+            if (templates.Count > 0)
+                form.Add(Stack(4, Caption("Vorlage (aus Extensions)"), Pick(["Keine Vorlage", .. templates.Select(t => $"{t.Template.Title} · {t.Ext.Manifest.Name}")], templateIndex, i =>
+                {
+                    templateIndex = i;
+                    if (i == 0) { extraTools = []; Build(); return; }
+                    var t = templates[i - 1].Template;
+                    string Fill(string x) => x.Replace("{{ticket}}", ticket.Trim().ToUpperInvariant()).Replace("{{project}}", project.Name).Replace("{{branch}}", branch);
+                    title = Fill(t.Title);
+                    prompt = Fill(t.Prompt);
+                    if (Enum.TryParse<AgentMode>(t.Mode, true, out var md)) mode = md;
+                    if (!string.IsNullOrWhiteSpace(t.Branch) && branch.Length == 0) branch = Fill(t.Branch!);
+                    extraTools = t.AllowedTools;
+                    Build();
+                })));
             form.Add(Stack(4, Caption("Projekt"), Pick(projects.Select(p => $"{p.Name}{(string.IsNullOrEmpty(p.EpicKey) ? "" : " · " + p.EpicKey)}").ToList(), projects.IndexOf(project), i => project = projects[i])));
             form.Add(Stack(4, Caption("Titel"), Input(title, "z. B. Checkout-Validierung refactoren", v => title = v)));
             form.Add(Row((Stack(4, Caption("Ticket"), Input(ticket, "SHOP-123", v =>
@@ -240,6 +260,7 @@ public class BoardView : ContentView, IActivatable
                 try
                 {
                     var h = await _mgr.CreateAgentAsync(project, title, ticket, branch, mode, provider, model.Trim(), worktree);
+                    if (extraTools.Count > 0) { h.Session.AllowedTools.AddRange(extraTools.Where(x => !h.Session.AllowedTools.Contains(x))); h.Save(); }
                     if (h.Session.Error != null) _toast.Show("Hinweis", h.Session.Error, NoticeLevel.Warning);
                     if (startNow && !string.IsNullOrWhiteSpace(prompt))
                     {

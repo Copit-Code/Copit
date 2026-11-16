@@ -95,6 +95,9 @@
             <Label Grid.Column="7" Text="{Binding Clock}" Style="{StaticResource Caption}" FontSize="10" VerticalOptions="Center" />
         </Grid>
 
+        <!-- ========== Dialoge / Dropdowns (eigener Stil) ========== -->
+        <Grid x:Name="OverlayHost" Grid.RowSpan="3" Grid.ColumnSpan="3" IsVisible="False" ZIndex="100" />
+
         <!-- ========== Toasts ========== -->
         <VerticalStackLayout x:Name="ToastHost" Grid.Column="2" Spacing="8" Margin="0,0,20,20" WidthRequest="380"
                              HorizontalOptions="End" VerticalOptions="End" />

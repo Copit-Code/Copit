@@ -7,6 +7,7 @@ public class ProjectsData { public List<CopitProject> Projects { get; set; } = [
 public class NotesData { public List<ProjectNote> Notes { get; set; } = []; }
 public class DaysData { public Dictionary<string, DayEntry> Days { get; set; } = []; }
 public class AutomationsData { public List<Automation> Automations { get; set; } = []; public List<AutomationRun> Runs { get; set; } = []; public bool Seeded { get; set; } }
+public class LocalWorklogData { public List<JiraWorklog> Worklogs { get; set; } = []; }
 public class BudgetsData { public List<Budget> Budgets { get; set; } = []; }
 public class PromptsData { public List<PromptSnippet> Snippets { get; set; } = []; public bool Seeded { get; set; } }
 public class PromptSnippet { public string Id { get; set; } = Guid.NewGuid().ToString("N"); public string Title { get; set; } = ""; public string Text { get; set; } = ""; }
@@ -23,6 +24,9 @@ public class DataService
     public JsonStore<TimeMemory> TimeMemory { get; } = new(AppPaths.File("time-memory.json"));
     public JsonStore<BudgetsData> Budgets { get; } = new(AppPaths.File("budgets.json"));
     public JsonStore<BookingSources> Sources { get; } = new(AppPaths.File("time-sources.json"));
+    public JsonStore<DocsData> Docs { get; } = new(AppPaths.File("docs.json"));
+    public JsonStore<LocalWorklogData> LocalWorklogs { get; } = new(AppPaths.File("worklogs.json"));
+    public JsonStore<ExtensionsData> Extensions { get; } = new(AppPaths.File("extensions.json"));
 
     public event Action? ProjectsChanged;
     public void RaiseProjectsChanged() => ProjectsChanged?.Invoke();

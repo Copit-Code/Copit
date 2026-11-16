@@ -228,6 +228,26 @@ public partial class SessionViewModel : ObservableObject, IActivatable
     }
 
     [RelayCommand]
+    private async Task PickContextAsync()
+    {
+        if (Host == null) return;
+        var options = Host.IsClaude
+            ? new[] { "Automatisch (nach Modell)", "200k", "1M – Modell mit [1m]", "Eigener Wert…" }
+            : new[] { "Automatisch (nach Modell)", "128k", "200k", "400k", "1M", "Eigener Wert…" };
+        var c = await Dialogs.Choose($"Kontextfenster · aktuell {Host.ContextText}", options);
+        if (c == null || c == "Abbrechen") return;
+        long? size = c switch
+        {
+            "128k" => 128_000, "200k" => 200_000, "400k" => 400_000, "1M" or "1M – Modell mit [1m]" => 1_000_000,
+            "Eigener Wert…" => await Dialogs.Prompt("Kontextfenster", "Tokens, z. B. 300000 oder 300k", (Host.ContextWindow / 1000) + "k") is { } v
+                && long.TryParse(v.Trim().ToLowerInvariant().Replace("k", "000").Replace("m", "000000").Replace(".", ""), out var n) && n >= 8_000 ? n : -1,
+            _ => null,
+        };
+        if (size == -1) return;
+        Host.SetContextWindow(size);
+    }
+
+    [RelayCommand]
     private async Task AnswerAsync(string answer)
     {
         if (Host == null || Host.IsRunning) return;

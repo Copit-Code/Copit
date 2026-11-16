@@ -26,7 +26,7 @@ public record TriggerDef(string Type, string Label, string Group, ParamDef[] Par
 public record ActionDef(string Type, string Label, string Group, ParamDef[] Params);
 
 /// <summary>Regelbasierte Automationen: WENN Trigger [UND Bedingungen] DANN Aktionen.</summary>
-public class AutomationService(DataService data, ConnectionHub hub, TimeBookingService time, AiService ai, GitService git)
+public class AutomationService(DataService data, ConnectionHub hub, TimeBookingService time, AiService ai, GitService git, ExtensionService extensions)
 {
     public static readonly TriggerDef[] Triggers =
     [
@@ -60,6 +60,7 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
         new("git.push", "Push", "Git", []),
         new("git.branch", "Branch anlegen", "Git", [new("name", "Name", "feature/{{ticket}}")]),
         new("gitlab.mr", "Merge Request", "GitLab", [new("target", "Ziel-Branch (leer = Default)"), new("title", "Titel", "{{ticket}}: {{title}}")]),
+        new("docs.update", "Doku aktualisieren", "Allgemein", [new("ai", "Doku-Agent starten (ja/nein)", "nein"), new("commit", "Doku committen (ja/nein)", "nein")]),
         new("ai.prompt", "KI fragen", "Allgemein", [new("prompt", "Prompt", "Fasse die Änderungen in {{repo}} zusammen.", true)]),
         new("shell", "Befehl ausführen", "Allgemein", [new("command", "Befehl", "npm test")]),
     ];
@@ -68,6 +69,11 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
     public static readonly string[] Ops = ["contains", "equals", "not_equals", "matches"];
 
     public IAgentOps? Agents { get; set; }
+    /// <summary>Doku für ein Repo aktualisieren (repo, mitAgent, commit) → Ergebnistext. Wird von der App gesetzt.</summary>
+    public Func<string, bool, bool, Task<string>>? DocsUpdater { get; set; }
+
+    /// <summary>Eingebaute Aktionen plus Aktionen aktiver Extensions.</summary>
+    public IReadOnlyList<ActionDef> AllActions => [.. Actions, .. extensions.ActionDefs];
     public event Action<Notice>? Notified;
     public event Action? RunsChanged;
 
@@ -267,6 +273,12 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
                 var mr = await gl.CreateMergeRequestAsync(project, status.Branch, target, P("title"), vars.GetValueOrDefault("summary", ""));
                 return $"MR !{mr.Iid}";
             }
+            case "docs.update":
+            {
+                if (DocsUpdater == null) throw new InvalidOperationException("Doku nicht verfügbar");
+                static bool Yes(string v) => v.Trim().ToLowerInvariant() is "ja" or "yes" or "true" or "1" or "j";
+                return await DocsUpdater(Cwd(), Yes(P("ai")), Yes(P("commit")));
+            }
             case "ai.prompt":
             {
                 var text = await ai.AskAsync(P("prompt"), AiProvider.Claude, cwd, null, CancellationToken.None);
@@ -282,6 +294,8 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
                 var o = r.StdOut.Trim();
                 return o.Length > 200 ? o[..200] : o;
             }
+            case var t when t.StartsWith("ext:"):
+                return await extensions.RunActionAsync(t, p, vars, cwd);
         }
         return "";
     }

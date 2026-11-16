@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using Copit.Core.Storage;
 
@@ -246,7 +247,7 @@ public class PermissionService
     /// <summary>Claude-Muster → Copilot-Tool-Muster.</summary>
     public static string? ToCopilotTool(string p)
     {
-        if (p is "Edit" or "Write" or "MultiEdit") return "write";
+        if (p is "Edit" or "Write" or "MultiEdit" || Regex.IsMatch(p, @"^(Edit|Write|MultiEdit)\(")) return "write";
         if (p == "Bash") return "shell";
         var m = System.Text.RegularExpressions.Regex.Match(p, @"^Bash\((.+?)(?::\*)?\)$");
         return m.Success ? $"shell({m.Groups[1].Value})" : null;

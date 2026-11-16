@@ -1,0 +1,48 @@
+{
+  "id": "copit-dotnet",
+  "name": "Copit .NET",
+  "version": "1.0.0",
+  "description": "Agent-Vorlagen und Aktionen für .NET-Projekte: Tests schreiben, Code-Review, dotnet test als Automations-Aktion.",
+  "author": "Copit",
+  "homepage": "https://github.com/Copit-Code/Copit/tree/main/extensions/copit-dotnet",
+  "agentTemplates": [
+    {
+      "id": "tests",
+      "title": "Tests für {{ticket}} schreiben",
+      "description": "xUnit-Tests für die Änderungen des Tickets",
+      "mode": "Edit",
+      "prompt": "Schreibe Unit-Tests (xUnit) für die Änderungen zu {{ticket}} im Projekt {{project}}. Nutze das bestehende Test-Projekt, führe danach `dotnet test` aus und behebe fehlschlagende Tests.",
+      "allowedTools": ["Bash(dotnet test:*)", "Bash(dotnet build:*)"]
+    },
+    {
+      "id": "review",
+      "title": "Code-Review {{branch}}",
+      "description": "Review des aktuellen Branches gegen main – nur lesen",
+      "mode": "Ask",
+      "prompt": "Mache ein Code-Review aller Änderungen auf dem aktuellen Branch gegenüber main (git diff main...HEAD). Gliedere nach: Fehler, Risiken, Lesbarkeit, Tests. Nenne Datei und Zeile."
+    }
+  ],
+  "actions": [
+    {
+      "id": "test",
+      "label": "dotnet test",
+      "description": "Führt dotnet test im Repo aus und meldet das Ergebnis",
+      "run": "powershell -NoProfile -ExecutionPolicy Bypass -File \"{ext}/scripts/test.ps1\"",
+      "params": [ { "key": "filter", "label": "Testfilter (optional)", "placeholder": "FullyQualifiedName~Booking" } ],
+      "timeoutMinutes": 20
+    }
+  ],
+  "automations": [
+    {
+      "id": "test-after-agent",
+      "name": "Agent fertig → dotnet test",
+      "trigger": "agent.finished",
+      "conditions": [],
+      "actions": [ { "type": "ext:copit-dotnet/test", "params": { "filter": "" } } ]
+    }
+  ],
+  "permissions": [
+    { "pattern": "Bash(dotnet test:*)", "level": "Allow" },
+    { "pattern": "Bash(dotnet build:*)", "level": "Allow" }
+  ]
+}

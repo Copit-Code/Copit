@@ -1,3 +1,4 @@
+using Copit.Core.Models;
 using Copit.Core.Services;
 using Copit.Services;
 using static Copit.Views.Ui;
@@ -218,6 +219,26 @@ public class CustomizeView : ContentView, IActivatable
             Line(),
             Stack(6, Text("Globale Anweisungen", 13, "Text", true), Area(ai.GlobalInstructions, "Wird jedem Agent als System-Anweisung mitgegeben", v => { ai.GlobalInstructions = v; }, 90),
                 HStack(8, Chip("Speichern", () => { Save(); _toast.Success("Gespeichert"); }))))));
+        page.Add(Caption("Tageslimits für Agents"));
+        foreach (var prov in new[] { AiProvider.Claude, AiProvider.Copilot })
+        {
+            var lim = prov == AiProvider.Claude ? ai.ClaudeLimit : ai.CopilotLimit;
+            var mgr = Handler?.MauiContext?.Services.GetService<SessionManager>();
+            var used = mgr?.UsageToday(prov, lim.Unit) ?? 0;
+            var units = prov == AiProvider.Claude ? new[] { ("usd", "Dollar"), ("hours", "Stunden"), ("runs", "Läufe") } : new[] { ("hours", "Stunden"), ("runs", "Läufe") };
+            if (!units.Any(u => u.Item1 == lim.Unit)) lim.Unit = units[0].Item1;
+            var frac = lim.Amount > 0 ? used / lim.Amount : 0;
+            page.Add(Ui.Card(Stack(10,
+                Row((Stack(2, Text(prov.ToString(), 14, "Text", true), Text(lim.Amount > 0 ? $"Heute {lim.Format(used)} von {lim.Format(lim.Amount)}" : $"Heute {lim.Format(used)} · kein Limit", 11.5, "Muted")), Star),
+                    (Seg(units.Select(u => (u.Item1, u.Item2)), lim.Unit, k => { lim.Unit = k; Save(); Render(); }), Auto),
+                    (Input(lim.Amount > 0 ? lim.Amount.ToString("0.##") : "", "0 = aus", v =>
+                    {
+                        if (double.TryParse(v.Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var a) && a >= 0) { lim.Amount = a; Save(); }
+                        else if (v.Trim().Length == 0) { lim.Amount = 0; Save(); }
+                    }, 100), Auto)),
+                lim.Amount > 0 ? Bar(frac, frac >= 1 ? C("Red") : frac >= 0.8 ? C("Amber") : C("Green"), 4) : new BoxView { HeightRequest = 0 },
+                Wrap("Gilt für alle Copit-Agents dieses Anbieters pro Kalendertag. Bei 80 % warnt Copit, bei 100 % starten keine neuen Läufe mehr." + (prov == AiProvider.Copilot ? " Copilot meldet keine Kosten – daher Stunden oder Läufe." : ""), 11, "Muted"))));
+        }
         var prices = string.Join("   ", Pricing.Prices.Where(p => p.Key != "default").Select(p => $"{p.Key} ${p.Value.Input}/${p.Value.Output}"));
         page.Add(Ui.Card(Stack(6, Caption("Preise für Kostenschätzung (USD / 1 Mio. Tokens, Input/Output)"), Mono(prices, 11.5, "Text2"),
             Wrap("Cache-Lesen 10 %, Cache-Schreiben 125 % des Input-Preises. Für Copit-Agents mit Claude nimmt Copit die exakten Kosten aus der CLI.", 11, "Muted"))));
@@ -258,10 +279,10 @@ public class CustomizeView : ContentView, IActivatable
                 (Toggle(u.Auto, v => { u.Auto = v; _ = _settings.SaveAsync(); }), Auto)),
             Line(),
             Stack(4, Caption("GitHub-Repository"), Input(u.Repo, "owner/name", v => { u.Repo = v.Trim(); _ = _settings.SaveAsync(); })),
-            Stack(4, Caption(hasToken ? "GitHub-Token (hinterlegt)" : "GitHub-Token für private Repos"),
+            Stack(4, Caption(hasToken ? "GitHub-Token (hinterlegt)" : "GitHub-Token (optional, nur für private Repos)"),
                 Row((tokenEntry, Star),
                     (Chip("Speichern", () => { _settings.SetSecret(SecretKeys.GitHubToken, _tokenInput.Trim()); _ = _settings.SaveAsync(); _tokenInput = ""; _toast.Success("Token gespeichert", "verschlüsselt (Windows DPAPI)"); Render(); }), Auto)),
-                Wrap("GitHub → Settings → Developer settings → Fine-grained tokens: nur dieses Repository, Berechtigung „Contents: Read-only“. Wird nur lokal und verschlüsselt gespeichert.", 11, "Muted")),
+                Wrap("Copit-Code/Copit ist öffentlich – dafür ist kein Token nötig. Nur für private Repos: GitHub → Settings → Developer settings → Fine-grained tokens, Resource owner = Besitzer des Repos, nur dieses Repository, „Contents: Read-only“. Wird lokal und verschlüsselt gespeichert.", 11, "Muted")),
             Line(),
             Row((Text(_updateStatus, 12.5, "Text2"), Star), (Primary("Jetzt prüfen", async () =>
             {

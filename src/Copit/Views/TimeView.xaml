@@ -205,7 +205,12 @@
                                             </FormattedString>
                                         </Label.FormattedText>
                                     </Label>
-                                    <Label Grid.Column="2" Text="{Binding Hours, StringFormat='{0:0.##}h'}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource Green}" />
+                                    <HorizontalStackLayout Grid.Column="2" Spacing="4">
+                                        <Label Text="{Binding Hours, StringFormat='{0:0.##}h'}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource Green}" VerticalOptions="Center" />
+                                        <c:IconButton Icon="x" IconSize="11" WidthRequest="20" HeightRequest="20" ToolTipProperties.Text="Interne Buchung entfernen"
+                                                      IsVisible="{Binding Source={x:Reference Root}, Path=BindingContext.IsLocalMode}"
+                                                      Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteWorklogCommand}" CommandParameter="{Binding .}" />
+                                    </HorizontalStackLayout>
                                 </Grid>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
@@ -437,7 +442,7 @@
                         </Label>
                     </Grid>
                     <Grid IsVisible="{Binding HasSuggestions}">
-                        <Button Text="In Jira buchen" Style="{StaticResource Primary}" HeightRequest="46" FontSize="14"
+                        <Button Text="{Binding BookButtonText}" Style="{StaticResource Primary}" HeightRequest="46" FontSize="14"
                                 Command="{Binding BookCommand}" IsEnabled="{Binding CanBook}" />
                         <ActivityIndicator IsRunning="{Binding IsBooking}" IsVisible="{Binding IsBooking}" Color="White" HorizontalOptions="End" Margin="0,0,16,0" WidthRequest="18" HeightRequest="18" />
                     </Grid>

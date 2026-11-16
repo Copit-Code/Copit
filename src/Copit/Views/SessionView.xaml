@@ -195,7 +195,8 @@
                 </Border>
 
                 <!-- Kontext -->
-                <HorizontalStackLayout Grid.Column="4" Spacing="8" VerticalOptions="Center" ToolTipProperties.Text="Kontextfenster (Tokens im aktuellen Kontext)">
+                <HorizontalStackLayout Grid.Column="4" Spacing="8" VerticalOptions="Center" ToolTipProperties.Text="Kontextfenster (Tokens im aktuellen Kontext) – klicken zum Ändern">
+                    <HorizontalStackLayout.GestureRecognizers><TapGestureRecognizer Command="{Binding PickContextCommand}" /></HorizontalStackLayout.GestureRecognizers>
                     <c:RingView WidthRequest="18" HeightRequest="18" Progress="{Binding Host.ContextFraction}" Color="{Binding Host.ContextColor}" Thickness="2.5" />
                     <Label Text="{Binding Host.ContextText, FallbackValue='0 / 200k'}" Style="{StaticResource MonoLabel}" FontSize="10.5" VerticalOptions="Center" />
                     <Label Text="{Binding Host.CostText}" Style="{StaticResource MonoLabel}" FontSize="10.5" TextColor="{StaticResource Muted}" VerticalOptions="Center" />
@@ -344,7 +345,7 @@
 
             <!-- Eingabe -->
             <Grid Grid.Row="4" Padding="28,10,28,14">
-                <Border MaximumWidthRequest="980" BackgroundColor="{StaticResource Bg2}" Stroke="{StaticResource Line}" StrokeThickness="1" Padding="0">
+                <Border MaximumWidthRequest="980" BackgroundColor="{StaticResource Bg2}" Stroke="{StaticResource Line}" StrokeThickness="1" Padding="0" VerticalOptions="End">
                     <Grid RowDefinitions="Auto,1,Auto">
                         <c:ChatEditor x:Name="InputEditor" Text="{Binding Input}" Placeholder="Antworten oder neue Aufgabe…   Enter = senden · Shift+Enter = Zeilenumbruch"
                                       AutoSize="TextChanges" MaximumHeightRequest="240" MinimumHeightRequest="44" BackgroundColor="Transparent" FontSize="13.5" Margin="6,4" />
@@ -364,21 +365,34 @@
                         </Grid>
                     </Grid>
                 </Border>
-                <!-- Prompt-Bibliothek -->
-                <Border IsVisible="{Binding ShowSnippets}" Style="{StaticResource CardBox}" VerticalOptions="End" HorizontalOptions="End"
-                        Margin="0,0,0,92" WidthRequest="360" Padding="0" ZIndex="10">
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Snippets}" Spacing="0">
-                        <BindableLayout.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Padding="14,9" BackgroundColor="Transparent">
-                                    <Grid.GestureRecognizers>
-                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.UseSnippetCommand}" CommandParameter="{Binding .}" />
-                                    </Grid.GestureRecognizers>
-                                    <Label Text="{Binding Title}" FontSize="12.5" />
-                                </Grid>
-                            </DataTemplate>
-                        </BindableLayout.ItemTemplate>
-                    </VerticalStackLayout>
+            </Grid>
+
+            <!-- Prompt-Bibliothek: Overlay über dem ganzen Chat, Klick daneben oder X schließt -->
+            <Grid Grid.RowSpan="5" IsVisible="{Binding ShowSnippets}" ZIndex="20" BackgroundColor="#01000000">
+                <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding ToggleSnippetsCommand}" /></Grid.GestureRecognizers>
+                <Border Style="{StaticResource CardBox}" VerticalOptions="End" HorizontalOptions="End" Margin="0,0,40,96" WidthRequest="380" Padding="0" MaximumHeightRequest="420">
+                    <Border.GestureRecognizers><TapGestureRecognizer /></Border.GestureRecognizers>
+                    <Grid RowDefinitions="Auto,1,*">
+                        <Grid ColumnDefinitions="*,Auto" Padding="14,8,6,8">
+                            <Label Text="PROMPT-BIBLIOTHEK" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                            <c:IconButton Grid.Column="1" Icon="x" IconSize="13" WidthRequest="26" HeightRequest="26" Command="{Binding ToggleSnippetsCommand}" ToolTipProperties.Text="Schließen" />
+                        </Grid>
+                        <BoxView Grid.Row="1" Color="{StaticResource LineSoft}" />
+                        <ScrollView Grid.Row="2">
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Snippets}" Spacing="0">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Padding="14,9" BackgroundColor="Transparent">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.UseSnippetCommand}" CommandParameter="{Binding .}" />
+                                            </Grid.GestureRecognizers>
+                                            <Label Text="{Binding Title}" FontSize="12.5" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </ScrollView>
+                    </Grid>
                 </Border>
             </Grid>
         </Grid>

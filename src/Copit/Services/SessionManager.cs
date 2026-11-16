@@ -101,6 +101,36 @@ public class SessionManager : IAgentOps
         return Host(s);
     }
 
+    /// <summary>Doku erzeugen und optional Doku-Agent starten / committen (für Seite und Automationen).</summary>
+    public async Task<string> UpdateDocsAsync(CopitProject project, DocsService docs, bool withAgent, bool commit, Action<string>? progress = null, bool skipGenerate = false)
+    {
+        var msg = "";
+        if (!skipGenerate)
+        {
+            var r = await docs.GenerateAsync(project, progress ?? (_ => { }));
+            msg = $"{r.Pages} Seiten aktualisiert · {r.Modules} Module · {r.Tickets} Tickets";
+        }
+        if (withAgent)
+        {
+            var folder = docs.For(project).Folder;
+            var h = await MainThread.InvokeOnMainThreadAsync(() => CreateAgentAsync(project, $"Doku aktualisieren · {project.Name}", null, null, AgentMode.Ask,
+                project.Provider ?? _settings.Settings.Ai.DefaultProvider, "", false));
+            h.Session.RestrictedTools = true;
+            h.Session.AllowedTools = DocsService.AgentTools(string.IsNullOrWhiteSpace(folder) ? "docs" : folder);
+            h.Save();
+            MainThread.BeginInvokeOnMainThread(() => _ = h.SendAsync(docs.AgentPrompt(project), "Doku vertiefen: Modul-Beschreibungen, Architektur-Überblick, Entscheidungen"));
+            msg += " · Doku-Agent gestartet";
+        }
+        if (commit && GitService.IsRepo(project.SourceFolder))
+        {
+            var folder = docs.For(project).Folder;
+            await Git.RunAsync(project.SourceFolder, default, "add", "--", string.IsNullOrWhiteSpace(folder) ? "docs" : folder);
+            var c = await Git.RunAsync(project.SourceFolder, default, "commit", "-m", "Doku aktualisiert (Copit)", "--", string.IsNullOrWhiteSpace(folder) ? "docs" : folder);
+            msg += c.Ok ? " · committet" : " · nichts zu committen";
+        }
+        return msg;
+    }
+
     public string? RepoOf(ChatSession agent) => _data.Project(agent.ProjectId)?.SourceFolder ?? agent.Cwd;
 
     public async Task<ChatSession> StartNewAsync(string? repo, string title, string prompt, string? ticket, string? branch, AgentMode mode, AiProvider provider)
@@ -131,6 +161,49 @@ public class SessionManager : IAgentOps
     /// <summary>Automations-Ereignis eines Agents auslösen.</summary>
     public void Emit(string type, ChatSession agent, Dictionary<string, string>? vars = null) =>
         _ = Task.Run(() => Automations.DispatchAsync(new AutomationEvent(type, vars ?? [], agent)));
+
+    /// <summary>Warnungen für die Oberfläche (z. B. Tageslimit bei 80 %).</summary>
+    public event Action<string, string>? Warn;
+
+    public DailyLimit LimitFor(AiProvider p) => p == AiProvider.Claude ? _settings.Settings.Ai.ClaudeLimit : _settings.Settings.Ai.CopilotLimit;
+
+    /// <summary>Heutiger Verbrauch aller Copit-Agents eines Anbieters in der Einheit des Limits.</summary>
+    public double UsageToday(AiProvider p, string? unit = null)
+    {
+        unit ??= LimitFor(p).Unit;
+        var today = DateTime.Today;
+        var runs = _store.All.Where(s => s.Provider == p).SelectMany(s => s.Runs).Where(r => r.Start >= today).ToList();
+        return unit switch
+        {
+            "usd" => runs.Sum(r => r.CostUsd),
+            "hours" => runs.Sum(r => ((r.End ?? DateTime.Now) - r.Start).TotalHours),
+            _ => runs.Count,
+        };
+    }
+
+    /// <summary>Tageslimit erreicht? → Begründung, sonst null.</summary>
+    public string? LimitBlock(AiProvider p)
+    {
+        var l = LimitFor(p);
+        if (l.Amount <= 0) return null;
+        var used = UsageToday(p);
+        return used >= l.Amount ? $"Tageslimit für {p} erreicht: {l.Format(used)} von {l.Format(l.Amount)}. Morgen geht es weiter – oder das Limit unter Customize → Agent-Verhalten anheben." : null;
+    }
+
+    /// <summary>Nach einem Lauf: bei 80 % einmal pro Tag warnen.</summary>
+    public void CheckLimitWarning(AiProvider p)
+    {
+        var l = LimitFor(p);
+        if (l.Amount <= 0) return;
+        var used = UsageToday(p);
+        var day = DateTime.Today.ToString("yyyy-MM-dd");
+        if (used >= l.Amount * 0.8 && l.WarnedDay != day)
+        {
+            l.WarnedDay = day;
+            _ = _settings.SaveAsync();
+            Warn?.Invoke($"{p}: {used / l.Amount * 100:0} % des Tageslimits", $"{l.Format(used)} von {l.Format(l.Amount)} heute verbraucht");
+        }
+    }
 
     /// <summary>Budget mit Hard-Stop erreicht? → Begründung, sonst null.</summary>
     public string? BudgetBlock(string? repo)
@@ -392,7 +465,29 @@ public partial class SessionHost : ObservableObject
         set { if (Session.Model != value) { Session.Model = value; OnPropertyChanged(); OnPropertyChanged(nameof(ModelDisplay)); OnPropertyChanged(nameof(ContextWindow)); OnPropertyChanged(nameof(ContextText)); Save(); } }
     }
 
-    public long ContextWindow => Session.Model.Contains("1m", StringComparison.OrdinalIgnoreCase) || ModelName.Contains("1m", StringComparison.OrdinalIgnoreCase) ? 1_000_000 : 200_000;
+    public long ContextWindow => Session.ContextOverride
+        ?? (Session.Model.Contains("[1m]", StringComparison.OrdinalIgnoreCase) || ModelName.Contains("[1m]", StringComparison.OrdinalIgnoreCase) || ModelName.Contains("-1m", StringComparison.OrdinalIgnoreCase) ? 1_000_000
+            : Provider == AiProvider.Copilot ? 128_000 : 200_000);
+
+    /// <summary>Kontextfenster setzen. 1M bei Claude stellt das Modell auf die [1m]-Variante um.</summary>
+    public void SetContextWindow(long? size)
+    {
+        if (size == 1_000_000 && IsClaude)
+        {
+            var baseModel = Session.Model.Replace("[1m]", "", StringComparison.OrdinalIgnoreCase).Trim();
+            if (baseModel.Length == 0) baseModel = "sonnet";
+            Model = baseModel + "[1m]";
+            Session.ContextOverride = null;
+        }
+        else
+        {
+            if (IsClaude && Session.Model.Contains("[1m]", StringComparison.OrdinalIgnoreCase) && size != null) Model = Session.Model.Replace("[1m]", "", StringComparison.OrdinalIgnoreCase);
+            Session.ContextOverride = size;
+        }
+        Save();
+        OnPropertyChanged(nameof(ContextWindow));
+        NotifyContext();
+    }
     public double ContextFraction => Math.Clamp(Session.ContextTokens / (double)ContextWindow, 0, 1);
     public string ContextText => $"{Fmt(Session.ContextTokens)} / {Fmt(ContextWindow)}";
     public string ContextPercent => $"{ContextFraction * 100:0}%";
@@ -464,7 +559,7 @@ public partial class SessionHost : ObservableObject
     {
         if (IsRunning || string.IsNullOrWhiteSpace(prompt)) return;
         var p = Project;
-        if (_mgr.BudgetBlock(p?.SourceFolder) is { } block)
+        if ((_mgr.LimitBlock(Provider) ?? _mgr.BudgetBlock(p?.SourceFolder)) is { } block)
         {
             Add(new ChatMessage { Role = ChatRole.Error, Text = block, IsError = true }).IsDone = true;
             Session.Error = block;
@@ -513,7 +608,7 @@ public partial class SessionHost : ObservableObject
 
         var allowed = Session.AllowedTools.Concat(Session.AllowedOnce).ToList();
         var disallowed = new List<string>();
-        if (_settings.Settings.Ai.ApplyPermissionRules)
+        if (_settings.Settings.Ai.ApplyPermissionRules && !Session.RestrictedTools)
         {
             var (a, d) = _mgr.Permissions.Flags(p?.SourceFolder);
             allowed.AddRange(a);
@@ -579,6 +674,7 @@ public partial class SessionHost : ObservableObject
             else { SetStatusSilently(AgentStatus.Review); _mgr.Emit("agent.finished", Session); }
             NotifyMetrics();
             Save();
+            _mgr.CheckLimitWarning(Provider);
             _mgr.RaiseAgentsChanged();
             RunFinished?.Invoke();
         }

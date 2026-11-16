@@ -122,14 +122,13 @@ public static class Ui
         return e;
     }
 
-    public static Picker Pick(IList<string> items, int index, Action<int> onChange, double? width = null)
+    /// <summary>Dropdown im Copit-Stil (eigenes Menü statt Windows-Picker).</summary>
+    public static Dropdown Pick(IList<string> items, int index, Action<int> onChange, double? width = null)
     {
-        var p = new Picker { FontSize = 12.5 };
-        foreach (var i in items) p.Items.Add(i);
-        p.SelectedIndex = index;
-        if (width != null) p.WidthRequest = width.Value;
-        p.SelectedIndexChanged += (_, _) => { if (p.SelectedIndex >= 0) onChange(p.SelectedIndex); };
-        return p;
+        var d = new Dropdown(items, index);
+        if (width != null) d.WidthRequest = width.Value;
+        d.SelectedIndexChanged += onChange;
+        return d;
     }
 
     public static Switch Toggle(bool on, Action<bool> onChange)

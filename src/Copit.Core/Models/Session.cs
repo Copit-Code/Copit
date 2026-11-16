@@ -55,6 +55,8 @@ public class ChatSession
     public List<ChatMessage> Messages { get; set; } = [];
     public long ContextTokens { get; set; }
     public long ContextWindow { get; set; } = 200_000;
+    /// <summary>Vom Nutzer gewählte Kontextgröße (null = automatisch nach Modell).</summary>
+    public long? ContextOverride { get; set; }
     public double TotalCostUsd { get; set; }
     public List<string> AllowedTools { get; set; } = [];
     /// <summary>Prompt der beim letzten Lauf noch nicht beendet war (Absturz / Neustart).</summary>
@@ -85,6 +87,8 @@ public class ChatSession
     public List<PermissionDenial> PendingPermissions { get; set; } = [];
     /// <summary>Für den nächsten Lauf einmalig erlaubte Tools.</summary>
     public List<string> AllowedOnce { get; set; } = [];
+    /// <summary>Nur die eigenen AllowedTools verwenden (keine globalen Copit-Regeln) – z. B. Doku-Agent, der nur docs/ ändern darf.</summary>
+    public bool RestrictedTools { get; set; }
     public string? Error { get; set; }
     public string? Summary { get; set; }
     public List<AgentRun> Runs { get; set; } = [];

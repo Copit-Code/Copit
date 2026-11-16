@@ -192,6 +192,19 @@ public class JiraClient
         return result.OrderBy(w => w.Started).ToList();
     }
 
+    /// <summary>Alle Worklogs eines Tickets (alle Personen) – für die Doku „Arbeit &amp; Verlauf“.</summary>
+    public async Task<List<(DateTime Started, string Author, long Seconds, string Comment)>> GetIssueWorklogsAsync(string key, CancellationToken ct = default)
+    {
+        var node = await GetAsync($"rest/api/2/issue/{Uri.EscapeDataString(key)}/worklog", ct);
+        var outp = new List<(DateTime, string, long, string)>();
+        foreach (var w in node?["worklogs"]?.AsArray() ?? [])
+        {
+            if (!DateTimeOffset.TryParse(w.Str("started"), CultureInfo.InvariantCulture, DateTimeStyles.None, out var started)) continue;
+            outp.Add((started.LocalDateTime, w?["author"].Str("displayName") ?? "", w.Long("timeSpentSeconds"), w.Str("comment")));
+        }
+        return outp.OrderBy(x => x.Item1).ToList();
+    }
+
     public static string FormatJiraDate(DateTime local)
     {
         var offset = TimeZoneInfo.Local.GetUtcOffset(local);
