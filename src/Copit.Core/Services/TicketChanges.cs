@@ -154,7 +154,8 @@ public partial class TicketChangesService(GitService git)
 
     private static IEnumerable<LogEntry> ParseLog(string outp)
     {
-        foreach (var block in outp.Split(Rs, StringSplitOptions.RemoveEmptyEntries))
+        // Git unter Windows liefert CRLF – sonst hängt \r an Betreff und Dateinamen
+        foreach (var block in outp.Replace("\r", "").Split(Rs, StringSplitOptions.RemoveEmptyEntries))
         {
             var lines = block.Split('\n');
             var head = lines[0].Split(Us);
@@ -189,7 +190,7 @@ public partial class TicketChangesService(GitService git)
         //    git sucht grob (Teilstring), exakt gefiltert wird hier – damit SHOP-1 nicht SHOP-12 trifft
         var cand = await git.RunAsync(repo, ct, "log", "--all", "-i", "-F", $"--grep={ticket}", $"--pretty=format:{Rs}%H{Us}%B", "-n", "500");
         var exact = new Regex($@"(?<![A-Za-z0-9]){Regex.Escape(ticket)}(?!\d)", RegexOptions.IgnoreCase);
-        var shas = cand.StdOut.Split(Rs, StringSplitOptions.RemoveEmptyEntries).Select(b => b.Split(Us, 2)).Where(p => p.Length == 2 && exact.IsMatch(p[1])).Select(p => p[0].Trim()).ToList();
+        var shas = cand.StdOut.Replace("\r", "").Split(Rs, StringSplitOptions.RemoveEmptyEntries).Select(b => b.Split(Us, 2)).Where(p => p.Length == 2 && exact.IsMatch(p[1])).Select(p => p[0].Trim()).ToList();
         if (shas.Count > 0)
         {
             var byMsg = await git.RunAsync(repo, ct, ["show", "--no-walk=unsorted", "--date=iso-strict", $"--pretty=format:{Rs}%H{Us}%an{Us}%ad{Us}%s", "--numstat", .. shas]);
