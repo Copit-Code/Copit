@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Richtet Copit auf VSCodium (portable) ein: VSCodium, Copit-Extension, Theme,
   Solution Explorer und C#-IntelliSense aus Open VSX, Desktop-Verknüpfung.

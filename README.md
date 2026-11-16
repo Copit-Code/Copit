@@ -1,22 +1,34 @@
 # Copit – Agent IDE
 
-Copit macht **VSCodium** zur Agent-IDE: Editor, Solution Explorer und C#-Code-Vervollständigung
-von VSCodium, dazu KI-Agents (Claude CLI / Copilot CLI) mit Kanban-Board, Flow-Ansicht, Kalender,
-Budgets, Permission-Regeln und Automationen für Git, GitLab und Jira. Alles lokal (SQLite).
+Copit gibt es als **Windows-App** (.NET MAUI) und als **VSCodium-Extension**. Beide bringen KI-Agents
+(Claude CLI / Copilot CLI) mit Kanban-Board, Activity (AI time / Agent time / Tokens / Dollar), Budgets,
+Permission-Regeln mit Git-Matrix, Automation-Builder für Git, GitLab und Jira sowie die
+Jira-Zeitbuchung mit KI (Rückfragen, gelernte Zuordnungen, Accounts, Tasks im Epic). Alles lokal.
 
 ```
 vscode/copit/          VSCodium-Extension (TypeScript)  ← Hauptprodukt
 src/Copit.Core/        .NET-Bibliothek (Jira, GitLab, Zeitbuchung, CLI-Runner)
-src/Copit/             .NET-MAUI-Cockpit (Zeitbuchung, Desktop-App)
+src/Copit/             Windows-App (.NET MAUI)
+installer/             Inno-Setup-Skript für den Windows-Installer
 tests/                 Unit-Tests (.NET)
 scripts/               Setup & Release
-.github/workflows/     CI und Release (baut die .vsix)
+.github/workflows/     CI und Release (Installer, portables ZIP, .vsix)
 ```
 
-## Installation (Windows)
+## Installation – Windows-App
+
+Neuestes Release unter **Releases** öffnen und `Copit-Setup-X.Y.Z.exe` ausführen
+(Installation pro Benutzer nach `%LOCALAPPDATA%\Programs\Copit`, keine Admin-Rechte nötig).
+Alternativ `Copit-X.Y.Z-win-x64-portable.zip` entpacken und `Copit.exe` starten.
+
+Updates: Copit prüft beim Start und alle 6 Stunden das neueste Release, lädt den Installer und
+aktualisiert sich still (Copit startet danach neu). Weil das Repository privat ist, unter
+**Customize → Updates** einen GitHub-Token mit „Contents: Read-only“ für dieses Repo hinterlegen.
+
+## Installation – VSCodium-Extension
 
 ```powershell
-./scripts/setup-vscodium.ps1 -Repo "<owner>/copit"
+./scripts/setup-vscodium.ps1 -Repo "Copit-Code/Copit"
 ```
 
 Lädt VSCodium portable nach `%LOCALAPPDATA%\Copit\VSCodium`, installiert Copit (neuestes Release),
@@ -35,7 +47,8 @@ lädt die `.vsix`, installiert sie und bietet „Neu laden“ an.
 ./scripts/release.ps1 0.2.0
 ```
 
-Setzt die Version, taggt `v0.2.0` und pusht – der Workflow `release.yml` baut und veröffentlicht die `.vsix`.
+Setzt die Version, taggt `v0.2.0` und pusht – der Workflow `release.yml` baut auf GitHub den
+Windows-Installer (Inno Setup), ein portables ZIP und die `.vsix` und veröffentlicht alles als Release.
 
 ## Entwicklung
 

@@ -9,8 +9,11 @@ import {
   PermissionRule, defaultCopitRules, describeRule, globalSettingsPath, matrixLevel, projectSettingsPath, readClaudeRules,
   ruleId, samePath, setMatrixLevel, writeClaudeRule,
 } from "./permissions";
-import { evaluate, isoWeek, newThresholds, overview, periodRange } from "./budgets";
-import { GitLab, Jira } from "./integrations";
+import { earliestNeeded, evaluate, isoWeek, newThresholds, overview, periodRange, UsageRecord } from "./budgets";
+import { buildActivity, ClaudeTranscripts, usageRecords } from "./activity";
+import { DEFAULT_PRICES, Price } from "./pricing";
+import { GitLab, Jira, JiraWorklog, ymd } from "./integrations";
+import * as TB from "./timebooking";
 import { AgentsTree, AutomationsTree } from "./trees";
 import { Panel } from "./panels";
 import * as G from "./git";
@@ -72,11 +75,32 @@ export async function activate(ctx: vscode.ExtensionContext) {
   };
   const budgets = (): Budget[] => db.get("budgets", []);
 
+  // ---------------------------------------------------------- Aktivität (Claude-Transkripte + Copit-Läufe)
+  const transcripts = new ClaudeTranscripts();
+  const prices = (): Record<string, Price> => ({ ...DEFAULT_PRICES, ...(cfg().get<Record<string, Price>>("prices") ?? {}) });
+  const GENERIC = new Set(["git", "src", "repos", "source", "projects", "code", "dev", "users", "documents"]);
+  const projectName = (p: string) => {
+    if (!p) return "?";
+    const parts = path.resolve(p).split(/[\\/]/).filter(Boolean);
+    const last = parts[parts.length - 1] ?? p, prev = parts[parts.length - 2] ?? "";
+    return !prev || GENERIC.has(prev.toLowerCase()) || /:$/.test(prev) ? last : `${prev}/${last}`;
+  };
+  const activity = async (from: number, to: number) => buildActivity({
+    from, to, transcripts: await transcripts.sessions(from, to), agents: manager.list(), runs: db.runs(from, to), prices: prices(), projectName,
+  });
+  let usageCache: { at: number; records: UsageRecord[] } | undefined;
+  const usage = async (force = false): Promise<UsageRecord[]> => {
+    if (!force && usageCache && Date.now() - usageCache.at < 30000) return usageCache.records;
+    const records = usageRecords(await activity(earliestNeeded(budgets()), Date.now() + 1));
+    usageCache = { at: Date.now(), records };
+    return records;
+  };
+
   // ---------------------------------------------------------- Kern
   manager = new AgentManager(db, () => ({
     claudePath: cfg().get("claudePath") || undefined, copilotPath: cfg().get("copilotPath") || undefined,
     claudeModel: cfg().get("claudeModel") || undefined, instructions: cfg().get("globalInstructions") ?? "", useWorktrees: cfg().get("useWorktrees") ?? true,
-  }), allRules, budgets);
+  }), allRules, budgets, () => usage(true));
 
   const notify = (msg: string, level: "info" | "warn" | "error" = "info") => {
     const fn = level === "error" ? vscode.window.showErrorMessage : level === "warn" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
@@ -96,34 +120,38 @@ export async function activate(ctx: vscode.ExtensionContext) {
   status.command = "copit.openBoard";
   status.show();
   ctx.subscriptions.push(status);
-  const updateStatus = () => {
+  const updateStatus = async () => {
+    // erst die (langsame) Nutzung laden, dann den aktuellen Zustand lesen – sonst überschreibt ein älterer Aufruf einen neueren
+    const week = overview(await usage().catch(() => [])).week;
     const list = manager.list();
     const running = list.filter((a) => manager.isRunning(a.id)).length;
     const need = list.filter((a) => a.status === "need_input").length;
-    const week = overview(db.runs(periodRange("week").from, Date.now() + 1), new Map(list.map((a) => [a.id, a]))).week;
     status.text = `${running ? `$(sync~spin) ${running} aktiv` : "$(layers) Copit"}${need ? `  $(question) ${need}` : ""}  $${week.cost.toFixed(2)} KW`;
     status.tooltip = `${list.length} Agents · ${need} brauchen Input · ${week.hours.toFixed(1)} h Agent-Zeit diese Woche`;
   };
-  updateStatus();
+  void updateStatus();
+  const statusTimer = setInterval(() => void updateStatus(), 120000);
+  ctx.subscriptions.push({ dispose: () => clearInterval(statusTimer) });
 
-  manager.on("changed", (a: Agent) => { agentsTree.refresh(); Panel.refreshAll("board"); Panel.all.get("agent:" + a.id)?.refresh(); updateStatus(); });
+  manager.on("changed", (a: Agent) => { agentsTree.refresh(); Panel.refreshAll("board"); Panel.all.get("agent:" + a.id)?.refresh(); void updateStatus(); });
   manager.on("event", (e) => Panel.all.get("agent:" + e.agentId)?.refresh(200));
   manager.on("delta", (d) => Panel.all.get("agent:" + d.agentId)?.refresh(250));
   manager.on("removed", () => { agentsTree.refresh(); Panel.refreshAll("board"); });
   manager.on("runFinished", (a: Agent) => {
     filesCache.delete(a.id);
-    Panel.refreshAll("calendar"); Panel.refreshAll("budgets"); autoTree.refresh(); updateStatus();
-    checkBudgets();
+    usageCache = undefined;
+    Panel.refreshAll("activity"); Panel.refreshAll("budgets"); autoTree.refresh(); void updateStatus();
+    void checkBudgets();
   });
 
   // ---------------------------------------------------------- Budgets
-  const checkBudgets = () => {
+  const checkBudgets = async () => {
     const list = budgets();
-    const runs = db.runs(0, Date.now() + 1);
-    const agents = new Map(manager.list().map((a) => [a.id, a]));
+    if (!list.length) return;
+    const records = await usage(true);
     let changed = false;
     for (const b of list) {
-      const s = evaluate(b, runs, agents);
+      const s = evaluate(b, records);
       for (const pct of newThresholds(s)) {
         b.notified = [...(b.notified ?? []), `${s.periodKey}:${pct}`];
         changed = true;
@@ -164,7 +192,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         const running = manager.isRunning(id);
         const startedAt = running ? db.events(id).filter((e) => e.kind === "user").pop()?.ts : undefined;
         return {
-          agent: { ...a, running, startedAt, pendingPermissions: (a.pendingPermissions ?? []).map((p) => ({ ...p, pattern: patternForDenial(p.tool, p.input) })) },
+          agent: { ...a, running, startedAt, pendingPermissions: [...new Map((a.pendingPermissions ?? []).map((p) => { const pattern = patternForDenial(p.tool, p.input); return [pattern, { ...p, pattern }] as const; })).values()] },
           events: db.events(id).slice(-1500), files: await files(a), columns: COLUMNS,
         };
       },
@@ -176,12 +204,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
           case "stop": manager.stop(id); break;
           case "status": manager.setStatus(id, m.value as any, true); break;
           case "answer": void manager.reply(id, m.value!); break;
-          case "approve": void manager.approve(id, [m.arg!]); break;
+          case "approve": void manager.approve(id, m.arg!.split(", ")); break;
           case "always": {
+            const pats = m.arg!.split(", ");
             const rules: PermissionRule[] = db.get("copitRules", []);
-            rules.push({ id: ruleId("copit", m.arg!, a.repo), pattern: m.arg!, level: "allow", source: "copit", repo: a.repo, enabled: true });
+            for (const p of pats) if (!rules.some((r) => r.id === ruleId("copit", p, a.repo))) rules.push({ id: ruleId("copit", p, a.repo), pattern: p, level: "allow", source: "copit", repo: a.repo, enabled: true });
             db.set("copitRules", rules);
-            void manager.approve(id, [m.arg!]);
+            void manager.approve(id, pats);
             Panel.refreshAll("customize");
             break;
           }
@@ -202,15 +231,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
   };
 
   const openBoard = () => Panel.show(ctx, "board", "Copit Board", "board", () => ({
-    state: () => {
+    state: async () => {
       const list = manager.list();
-      const runs = db.runs(0, Date.now() + 1);
-      const amap = new Map(list.map((a) => [a.id, a]));
+      const records = await usage().catch(() => []);
       return {
         columns: COLUMNS,
         agents: list.map((a) => ({ ...a, running: manager.isRunning(a.id) })),
         projects: [...new Set(list.map((a) => a.project))],
-        budget: budgets().slice(0, 3).map((b) => { const s = evaluate(b, runs, amap); return { label: b.name, fraction: s.fraction, text: `${s.used.toFixed(2)} / ${b.amount} (${s.periodLabel})` }; }),
+        budget: budgets().slice(0, 3).map((b) => { const s = evaluate(b, records); return { label: b.name, fraction: s.fraction, text: `${s.used.toFixed(2)} / ${b.amount} (${s.periodLabel})` }; }),
       };
     },
     onAct: async (m) => {
@@ -264,33 +292,284 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (prefill) { fill = prefill; p.refresh(); }
   };
 
-  let calOffset = 0;
-  const openCalendar = () => Panel.show(ctx, "calendar", "Agent-Kalender", "calendar", () => ({
-    state: () => {
-      const w = periodRange("week", new Date(Date.now() + calOffset * 7 * 86400000));
-      const agents = new Map(manager.list().map((a) => [a.id, a]));
-      const blocks = db.runs(w.from, w.to).map((r) => {
-        const a = agents.get(r.agentId);
-        return { agentId: r.agentId, title: a?.title ?? "(gelöscht)", ticket: a?.ticket, project: a?.project ?? "?", start: r.startedAt, end: r.endedAt ?? Date.now(),
-          aiMs: r.aiMs, cost: r.costUsd, ok: r.ok, running: !r.endedAt && manager.isRunning(r.agentId) };
-      });
-      return { weekStart: w.from, blocks, kw: isoWeek(new Date(w.from)) };
-    },
-    onAct: (m) => {
-      if (m.act === "nav") calOffset = m.value === "0" ? 0 : calOffset + Number(m.value);
-      else if (m.act === "open") openAgent(m.arg!);
-    },
-  }));
+  // ---------------------------------------------------------- Zeitbuchung
+  type TimeState = { month: number; selected: number; working: boolean; booking: boolean; steps: string[]; error?: string; loading: boolean;
+    accountDialog?: { index: number; issueKey: string; summary: string; options: string[] } };
+  const tb: TimeState = { month: 0, selected: 0, working: false, booking: false, steps: [], loading: false };
+  const tbSettings = () => ({ minHours: 8, workDays: [1, 2, 3, 4, 5], dayStart: "08:00", rounding: 15, ...db.get<any>("time.settings", {}) });
+  const tbRules = (): TB.TimeRule[] => db.get("time.rules", TB.DEFAULT_RULES);
+  const tbDays = (): Record<string, TB.DayEntry> => db.get("time.days", {});
+  const tbEntry = (d: number): TB.DayEntry => tbDays()[ymd(new Date(d))] ?? { note: "", suggestions: [], summary: "" };
+  const tbSave = (d: number, e: TB.DayEntry) => { const all = tbDays(); all[ymd(new Date(d))] = e; db.set("time.days", all); };
+  const tbMem = (): TB.AccountMemory => db.get("time.accounts", { issues: {}, projects: {}, known: [] });
+  const tbTopics = (): TB.TopicMapping[] => db.get("time.topics", []);
+  const tbSources = (): TB.Sources => ({ ...TB.ALL_SOURCES, ...db.get<Partial<TB.Sources>>("time.sources", {}) });
+  const accountField = () => cfg().get<string>("jira.accountField") || undefined;
+  const accountRequired = () => !!cfg().get("jira.useTempo") || !!accountField();
+  const targetFor = (d: number) => {
+    const e = tbDays()[ymd(new Date(d))];
+    if (e?.target != null) return e.target;
+    const s = tbSettings();
+    return s.workDays.includes(new Date(d).getDay()) ? s.minHours : 0;
+  };
+  const worklogCache = new Map<string, { at: number; logs: JiraWorklog[] }>();
+  const monthLogs = async (force = false): Promise<JiraWorklog[]> => {
+    const j = jira();
+    if (!j) return [];
+    const first = new Date(tb.month), start = new Date(first.getFullYear(), first.getMonth(), 1 - ((first.getDay() + 6) % 7));
+    const key = ymd(start);
+    const c = worklogCache.get(key);
+    if (!force && c && Date.now() - c.at < 5 * 60000) return c.logs;
+    tb.loading = true;
+    try { const logs = await j.myWorklogs(start, new Date(start.getTime() + 41 * 86400000)); worklogCache.set(key, { at: Date.now(), logs }); return logs; }
+    catch (e: any) { tb.error = "Jira: " + e.message; return c?.logs ?? []; }
+    finally { tb.loading = false; }
+  };
+  let pendingAccount: ((v: { account: string; project: boolean } | undefined) => void) | undefined;
+  let stopAi: { stop?: () => void } = {};
+
+  const openTime = (day?: number) => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (!tb.selected || day) { tb.selected = day ?? today.getTime(); }
+    const sel = new Date(tb.selected); tb.month = new Date(sel.getFullYear(), sel.getMonth(), 1).getTime();
+    return Panel.show(ctx, "time", "Zeitbuchung", "timebooking", () => ({
+      state: async () => {
+        const logs = await monthLogs();
+        const first = new Date(tb.month), start = new Date(first.getFullYear(), first.getMonth(), 1 - ((first.getDay() + 6) % 7));
+        const days = tbDays();
+        const s = tbSettings();
+        const now = new Date(); now.setHours(0, 0, 0, 0);
+        const cells = [...Array(42)].map((_, i) => {
+          const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+          const k = ymd(d);
+          return {
+            date: d.getTime(), inMonth: d.getMonth() === first.getMonth(), isToday: d.getTime() === now.getTime(), workDay: s.workDays.includes(d.getDay()),
+            booked: logs.filter((l) => ymd(new Date(l.started)) === k).reduce((x, l) => x + l.seconds, 0) / 3600, target: targetFor(d.getTime()),
+            hasNote: !!days[k]?.note?.trim(), hasDraft: !!days[k]?.suggestions?.some((x) => !x.booked),
+          };
+        });
+        const inMonth = cells.filter((c) => c.inMonth);
+        const past = inMonth.filter((c) => c.date < now.getTime() && c.target - c.booked > 0.01);
+        return {
+          month: tb.month, days: cells, selected: tb.selected, loading: tb.loading, jira: !!jira(), accountRequired: accountRequired(),
+          entry: { ...tbEntry(tb.selected), target: targetFor(tb.selected) }, worklogs: logs.filter((l) => ymd(new Date(l.started)) === ymd(new Date(tb.selected))),
+          working: tb.working, booking: tb.booking, steps: tb.steps, error: tb.error, accountDialog: tb.accountDialog,
+          rules: tbRules(), settings: { ...s, provider: cfg().get("defaultProvider") ?? "claude" }, sources: tbSources(), topics: tbTopics(),
+          stats: { booked: inMonth.reduce((x, c) => x + c.booked, 0), target: inMonth.reduce((x, c) => x + c.target, 0), missingDays: past.length, missingHours: past.reduce((x, c) => x + c.target - c.booked, 0), fraction: 0 },
+        };
+      },
+      onAct: async (m) => {
+        const p = Panel.all.get("time");
+        const parseH = (v?: string) => { const n = parseFloat(String(v ?? "").replace(",", ".").replace(/h$/i, "")); return isNaN(n) ? undefined : n; };
+        const entry = tbEntry(tb.selected);
+        switch (m.act) {
+          case "month": {
+            if (m.value === "0") { const d = new Date(); d.setHours(0, 0, 0, 0); tb.selected = d.getTime(); tb.month = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); }
+            else { const d = new Date(tb.month); tb.month = new Date(d.getFullYear(), d.getMonth() + Number(m.value), 1).getTime(); }
+            tb.error = undefined;
+            break;
+          }
+          case "select": if (!tb.working) { tb.selected = Number(m.value); tb.error = undefined; tb.steps = []; } break;
+          case "note": entry.note = m.value ?? ""; tbSave(tb.selected, entry); break;
+          case "target": {
+            const h = parseH(m.value);
+            const def = tbSettings().workDays.includes(new Date(tb.selected).getDay()) ? tbSettings().minHours : 0;
+            entry.target = h == null || Math.abs(h - def) < 0.001 ? undefined : h;
+            tbSave(tb.selected, entry);
+            break;
+          }
+          case "edit": {
+            const i = Number(m.arg); const v = JSON.parse(m.value!);
+            const sg = entry.suggestions[i]; if (!sg) break;
+            if (v.field === "hours") { sg.hours = parseH(v.value) ?? sg.hours; tbSave(tb.selected, entry); return; }
+            if (v.field === "comment") { sg.comment = v.value; tbSave(tb.selected, entry); return; }
+            if (v.field === "issueKey") {
+              const key = String(v.value).trim().toUpperCase();
+              if (!key || key === sg.issueKey) return;
+              sg.issueKey = key; sg.account = undefined; sg.accountFromMemory = false;
+              const i = await jira()?.issueFull(key, accountField());
+              sg.issueSummary = i?.summary ?? "";
+              if (accountRequired()) TB.resolveAccounts([sg], i ? [i] : [], tbMem());
+              // Korrektur merken: dieses Thema/Repo gehört auf dieses Ticket
+              if (sg.topic || sg.repo) { db.set("time.topics", TB.learnTopic(tbTopics(), sg, 3)); notify(`Gemerkt: „${sg.topic ?? sg.repo}“ → ${key}`); }
+              tbSave(tb.selected, entry);
+            }
+            break;
+          }
+          case "remove": entry.suggestions.splice(Number(m.arg), 1); tbSave(tb.selected, entry); break;
+          case "add": {
+            const key = (await vscode.window.showInputBox({ prompt: "Ticket-Key", placeHolder: "ABC-123" }))?.trim().toUpperCase();
+            if (!key) return;
+            const i = await jira()?.issueFull(key, accountField());
+            const sg: TB.Suggestion = { issueKey: key, issueSummary: i?.summary ?? "", hours: 1, comment: "", reason: "manuell", confidence: 1 };
+            TB.resolveAccounts([sg], i ? [i] : [], tbMem());
+            entry.suggestions.push(sg); tbSave(tb.selected, entry);
+            break;
+          }
+          case "issue": { const u = jira()?.issueUrl(m.arg!); if (u) await vscode.env.openExternal(vscode.Uri.parse(u)); return; }
+          case "settings": openCustomize(); return;
+          case "cancel": stopAi.stop?.(); break;
+          case "source": { const s2 = tbSources(); (s2 as any)[m.arg!] = !(s2 as any)[m.arg!]; db.set("time.sources", s2); break; }
+          case "topic.del": db.set("time.topics", tbTopics().filter((t) => t.id !== m.arg)); break;
+          case "topic.add": {
+            const v = JSON.parse(m.value!);
+            if (!v.topic || !v.ticket) return;
+            db.set("time.topics", TB.learnTopic(tbTopics(), { topic: v.topic, repo: v.repo || undefined, issueKey: String(v.ticket).toUpperCase() }, 3));
+            break;
+          }
+          case "rules.save": {
+            const v = JSON.parse(m.value!);
+            db.set("time.rules", v.rules);
+            db.set("time.settings", { ...tbSettings(), minHours: parseH(v.minHours) ?? 8, rounding: parseInt(v.rounding) || 15, dayStart: /^\d{1,2}:\d{2}$/.test(v.dayStart) ? v.dayStart : "08:00" });
+            break;
+          }
+          case "account": {
+            const i = Number(m.arg);
+            const acc = await askAccount(i);
+            if (acc) { const e2 = tbEntry(tb.selected); e2.suggestions[i].account = acc; tbSave(tb.selected, e2); }
+            break;
+          }
+          case "account.ok": { const v = JSON.parse(m.value!); pendingAccount?.(v.account ? v : undefined); return; }
+          case "account.skip": pendingAccount?.(undefined); return;
+          case "analyze": {
+            if (tb.working) return;
+            const v = JSON.parse(m.value!);
+            const hours = parseH(v.hours);
+            if (!hours || hours <= 0) { tb.error = "Bitte angeben, wie viele Stunden gebucht werden sollen."; break; }
+            tb.working = true; tb.error = undefined; tb.steps = [];
+            const day = new Date(tb.selected);
+            const progress = (s: string) => { if (tb.steps[tb.steps.length - 1] !== s) { tb.steps.push(s); tb.steps = tb.steps.slice(-7); } p?.refresh(80); };
+            p?.refresh(0);
+            try {
+              const dayFrom = day.getTime();
+              const sessions = await activity(dayFrom, dayFrom + 86400000);
+              const c = await TB.gather({ date: day, hoursToBook: hours, jira: jira(), gitlab: gitlab(), repos, sessions, note: entry.note, accountField: accountField(), progress, sources: tbSources(), topics: tbTopics() });
+              c.warnings.forEach((w) => progress("Hinweis: " + w));
+              let plan: { summary: string; bookings: TB.Suggestion[] };
+              if (v.ai) {
+                progress(`KI · ${v.provider} formuliert Buchungsvorschläge`);
+                stopAi = {};
+                try {
+                  const text = await TB.askAi(TB.buildPrompt(c, tbRules(), tbSettings().rounding), v.provider, v.provider === "claude" ? cfg().get("claudeModel") || undefined : undefined,
+                    v.provider === "claude" ? cfg().get("claudePath") || undefined : cfg().get("copilotPath") || undefined, progress, stopAi);
+                  plan = TB.parsePlan(text);
+                } catch (e: any) {
+                  if (/Abgebrochen/.test(e.message)) throw e;
+                  notify("KI nicht verfügbar – Vorschlag ohne KI: " + e.message, "warn");
+                  plan = TB.heuristicPlan(c, tbSettings().rounding);
+                }
+              } else plan = TB.heuristicPlan(c, tbSettings().rounding);
+              for (const b of plan.bookings) b.issueSummary = c.issues.find((i) => i.key === b.issueKey)?.summary ?? b.issueSummary;
+              TB.normalize(plan.bookings, hours, tbSettings().rounding);
+              if (accountRequired()) { progress("Jira · prüfe Accounts der Tickets"); TB.resolveAccounts(plan.bookings, c.issues, tbMem()); }
+              progress("Fertig");
+              const e2 = tbEntry(tb.selected);
+              e2.suggestions = plan.bookings; e2.summary = plan.summary || (plan.bookings.length ? "" : "Keine passenden Tickets gefunden – trage eine Tagesnotiz ein und versuche es erneut.");
+              tbSave(tb.selected, e2);
+            } catch (e: any) { tb.error = e.message; }
+            finally { tb.working = false; }
+            break;
+          }
+          case "book": {
+            const j = jira();
+            if (!j || tb.booking) return;
+            const e2 = tbEntry(tb.selected);
+            const unassigned = e2.suggestions.filter((s) => !s.booked && s.hours > 0 && !s.issueKey).length;
+            if (unassigned) notify(`${unassigned} Vorschlag/Vorschläge ohne Ticket werden übersprungen – trag das Ticket ein, Copit merkt es sich.`, "warn");
+            const open = e2.suggestions.map((s, i) => ({ s, i })).filter(({ s }) => !s.booked && s.hours > 0 && !!s.issueKey);
+            if (!open.length) return;
+            if (accountRequired()) for (const { s, i } of open.filter(({ s }) => !s.account)) {
+              const acc = await askAccount(i);
+              if (!acc) { notify(`Buchung abgebrochen – für ${s.issueKey} fehlt der Account.`, "warn"); Panel.all.get("time")?.refresh(); return; }
+              const mem = tbMem();
+              for (const o of open) if (!o.s.account && (o.s.issueKey === s.issueKey || mem.projects[TB.projectKey(o.s.issueKey)] === acc)) o.s.account = acc;
+            }
+            const total = open.reduce((x, o) => x + o.s.hours, 0);
+            const ok = await vscode.window.showInformationMessage(`${open.length} Buchung(en) mit ${total.toLocaleString("de-DE")} h am ${new Date(tb.selected).toLocaleDateString("de-DE")} in Jira eintragen?`, { modal: true }, "Buchen");
+            if (ok !== "Buchen") return;
+            tb.booking = true; p?.refresh(0);
+            try {
+              const logs = (await monthLogs(true)).filter((l) => ymd(new Date(l.started)) === ymd(new Date(tb.selected)));
+              let start = TB.nextStart(new Date(tb.selected), tbSettings().dayStart, logs);
+              let okCount = 0;
+              for (const { s } of open) {
+                const sec = Math.round(s.hours * 3600);
+                try {
+                  await j.book(s.issueKey, start, sec, s.comment, { tempo: !!cfg().get("jira.useTempo"), account: s.account, accountAttribute: cfg().get<string>("jira.tempoAttribute") || "_Account_" });
+                  s.booked = true; s.error = undefined; okCount++;
+                  if (s.topic || s.repo) db.set("time.topics", TB.learnTopic(tbTopics(), s, 1));
+                  start = new Date(start.getTime() + sec * 1000);
+                } catch (err: any) { s.error = err.message; }
+              }
+              tbSave(tb.selected, e2);
+              await monthLogs(true);
+              notify(okCount === open.length ? `${okCount} Buchung(en) gespeichert (${total.toLocaleString("de-DE")} h).` : `${okCount} von ${open.length} Buchungen gespeichert – Details im Panel.`, okCount === open.length ? "info" : "warn");
+            } finally { tb.booking = false; }
+            break;
+          }
+        }
+      },
+    }));
+  };
+
+  /** Fragt den Account für eine Buchung ab (Dialog im Panel) und merkt ihn sich. */
+  const askAccount = async (index: number): Promise<string | undefined> => {
+    const e = tbEntry(tb.selected);
+    const s = e.suggestions[index];
+    if (!s) return undefined;
+    const mem = tbMem();
+    const options = [...mem.known];
+    if (cfg().get("jira.useTempo")) for (const a of (await jira()?.tempoAccounts()) ?? []) if (!options.includes(a.key)) options.push(a.key);
+    tb.accountDialog = { index, issueKey: s.issueKey, summary: s.issueSummary, options: options.slice(0, 40) };
+    Panel.all.get("time")?.refresh(0);
+    const r = await new Promise<{ account: string; project: boolean } | undefined>((res) => { pendingAccount = res; });
+    pendingAccount = undefined; tb.accountDialog = undefined;
+    Panel.all.get("time")?.refresh(0);
+    if (!r) return undefined;
+    db.set("time.accounts", TB.remember(tbMem(), s.issueKey, r.account, r.project));
+    const e2 = tbEntry(tb.selected);
+    for (const x of e2.suggestions) if (!x.account && (x.issueKey === s.issueKey || (r.project && TB.projectKey(x.issueKey) === TB.projectKey(s.issueKey)))) { x.account = r.account; x.accountFromMemory = true; }
+    tbSave(tb.selected, e2);
+    return r.account;
+  };
+  // Activity: Tag (Zeitleiste) und Woche (Kalender + Stundenzettel)
+  const act = { mode: "day" as "day" | "week", scope: "all" as "workspace" | "all", anchor: Date.now() };
+  const startOfDay = (ts: number) => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  const inWorkspace = (p: string) => repos.some((r) => samePath(r, p) || p.toLowerCase().startsWith(r.toLowerCase() + path.sep));
+  const openCalendar = (mode?: "day" | "week") => {
+    if (mode) act.mode = mode;
+    return Panel.show(ctx, "activity", "Activity", "activity", () => ({
+      state: async () => {
+        const dayFrom = startOfDay(act.anchor);
+        const w = periodRange("week", new Date(act.anchor));
+        const running = new Set(manager.list().filter((a) => manager.isRunning(a.id)).map((a) => a.id));
+        const filter = (list: Awaited<ReturnType<typeof activity>>) => list
+          .filter((s) => act.scope === "all" || inWorkspace(s.projectPath))
+          .map((s) => ({ ...s, running: !!s.agentId && running.has(s.agentId), perDay: undefined }));
+        const week = filter(await activity(w.from, w.to));
+        const day = act.mode === "day" ? filter(await activity(dayFrom, dayFrom + 86400000)) : [];
+        return { mode: act.mode, scope: act.scope, anchor: act.anchor, from: dayFrom, to: dayFrom + 86400000, weekFrom: w.from, sessions: day, weekSessions: week, now: Date.now() };
+      },
+      onAct: async (m) => {
+        const step = act.mode === "day" ? 86400000 : 7 * 86400000;
+        if (m.act === "nav") act.anchor = m.value === "0" ? Date.now() : act.anchor + Number(m.value) * step;
+        else if (m.act === "mode") act.mode = m.value as any;
+        else if (m.act === "scope") act.scope = m.value as any;
+        else if (m.act === "pickday") { act.anchor = Number(m.value); act.mode = "day"; }
+        else if (m.act === "open") openAgent(m.arg!);
+        else if (m.act === "copy") { await vscode.env.clipboard.writeText(m.value ?? ""); notify("In die Zwischenablage kopiert."); }
+      },
+    }));
+  };
 
   let picked: string | undefined;
   const openBudgets = () => Panel.show(ctx, "budgets", "Budgets", "budgets", () => ({
-    state: () => {
-      const runs = db.runs(0, Date.now() + 1);
-      const agents = new Map(manager.list().map((a) => [a.id, a]));
+    state: async () => {
+      const records = await usage();
       const list = budgets();
       const s = {
-        budgets: list, statuses: list.map((b) => { const st = evaluate(b, runs, agents); return { id: b.id, used: st.used, fraction: st.fraction, periodLabel: st.periodLabel }; }),
-        overview: overview(runs, agents), repos: repos.map((r) => ({ path: r, name: repoName(r) })), picked,
+        budgets: list, statuses: list.map((b) => { const st = evaluate(b, records); return { id: b.id, used: st.used, fraction: st.fraction, periodLabel: st.periodLabel }; }),
+        overview: overview(records), repos: repos.map((r) => ({ path: r, name: repoName(r) })), picked,
       };
       picked = undefined;
       return s;
@@ -302,9 +581,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
         const i = list.findIndex((x) => x.id === b.id);
         if (i >= 0) list[i] = { ...list[i], ...b }; else list.push(b);
         db.set("budgets", list);
-        checkBudgets();
-        updateStatus(); Panel.refreshAll("board");
-      } else if (m.act === "delete") db.set("budgets", list.filter((x) => x.id !== m.arg));
+        void checkBudgets();
+        void updateStatus(); Panel.refreshAll("board");
+      } else if (m.act === "delete") {
+        const ok = await vscode.window.showWarningMessage(`Budget "${m.value}" löschen?`, { modal: true }, "Löschen");
+        if (ok === "Löschen") db.set("budgets", list.filter((x) => x.id !== m.arg));
+      }
       else if (m.act === "browse") {
         const f = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: "Ordner übernehmen" });
         if (f?.[0]) picked = (await G.repoRoot(f[0].fsPath)) ?? f[0].fsPath;
@@ -321,7 +603,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
       onAct: async (m) => {
         if (m.act === "toggle") { const a = db.automations().find((x) => x.id === m.arg); if (a) { a.enabled = !a.enabled; db.saveAutomation(a); } }
         else if (m.act === "save") { const a: Automation = JSON.parse(m.value!); db.saveAutomation(a); }
-        else if (m.act === "delete") db.deleteAutomation(m.arg!);
+        else if (m.act === "delete") {
+          const ok = await vscode.window.showWarningMessage(`Automation "${m.value}" löschen?`, { modal: true }, "Löschen");
+          if (ok === "Löschen") db.deleteAutomation(m.arg!);
+        }
         else if (m.act === "test") {
           const a: Automation = JSON.parse(m.value!);
           if (a.id.startsWith("new-")) { notify("Bitte zuerst speichern."); return; }
@@ -335,7 +620,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     if (select) p.post({ type: "select", id: select });
   };
 
-  const settingKeys = ["claudePath", "copilotPath", "defaultProvider", "claudeModel", "globalInstructions", "useWorktrees", "jira.url", "jira.authMode", "jira.user", "gitlab.url", "ignoreCertificateErrors", "pollSeconds", "update.repo", "update.auto"];
+  const settingKeys = ["jira.accountField", "jira.useTempo", "jira.tempoAttribute", "claudePath", "copilotPath", "defaultProvider", "claudeModel", "globalInstructions", "useWorktrees", "jira.url", "jira.authMode", "jira.user", "gitlab.url", "ignoreCertificateErrors", "pollSeconds", "update.repo", "update.auto"];
   const openCustomize = () => Panel.show(ctx, "customize", "Customize", "permissions", () => ({
     state: async () => {
       const rules = allRules().map((r) => ({ ...r, repoName: r.repo ? repoName(r.repo) : undefined, ...describeRule(r.pattern) }));
@@ -456,9 +741,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const reg = (id: string, fn: (...a: any[]) => unknown) => ctx.subscriptions.push(vscode.commands.registerCommand(id, fn));
   reg("copit.newAgent", () => openNewAgent());
   reg("copit.openBoard", openBoard);
-  reg("copit.openCalendar", openCalendar);
+  reg("copit.openCalendar", () => openCalendar());
   reg("copit.openPermissions", openCustomize);
   reg("copit.openBudgets", openBudgets);
+  reg("copit.openTime", () => openTime());
   reg("copit.openAutomations", (id?: string) => openAutomations(typeof id === "string" ? id : undefined));
   reg("copit.openAgent", (id: string) => openAgent(id));
   reg("copit.stopAgent", (n: any) => manager.stop(n?.agent?.id ?? n));
@@ -477,10 +763,21 @@ export async function activate(ctx: vscode.ExtensionContext) {
   if (process.env.COPIT_DEMO === "1" && repos[0]) { seedDemo(db, repos[0]); agentsTree.refresh(); }
   const startView = process.env.COPIT_OPEN;
   const views: Record<string, () => void> = {
-    board: openBoard, calendar: openCalendar, budgets: openBudgets, automations: () => openAutomations(), customize: openCustomize, newagent: () => openNewAgent(),
+    time: () => openTime(), board: openBoard, calendar: () => openCalendar("week"), activity: () => openCalendar("day"), budgets: openBudgets, automations: () => openAutomations(), customize: openCustomize, newagent: () => openNewAgent(),
     agent: () => { const a = manager.list().find((x) => x.status === "review") ?? manager.list()[0]; if (a) openAgent(a.id); },
   };
-  if (startView && views[startView]) setTimeout(views[startView], 600);
+  // Aufgeräumtes Copit-Profil: leere Seitenleiste rechts schließen
+  if (process.env.COPIT_PROFILE === "1") setTimeout(() => void vscode.commands.executeCommand("workbench.action.closeAuxiliaryBar"), 1200);
+
+  // Selbsttest: echten Agent im ersten Repo starten und Agent-Tab zeigen (COPIT_SELFTEST=1)
+  if (process.env.COPIT_SELFTEST === "1" && repos[0]) {
+    setTimeout(async () => {
+      const a = await manager.create({ title: "Selbsttest: Notiz anlegen", ticket: "COPIT-1", repo: repos[0], provider: "claude", mode: "edit", model: process.env.COPIT_SELFTEST_MODEL || "haiku", start: false,
+        prompt: "Lege die Datei notiz.txt mit dem Inhalt 'Copit live' an, lies sie danach mit dem Read-Tool zur Kontrolle und antworte in einem Satz." });
+      openAgent(a.id);
+      void manager.start(a.id);
+    }, 1500);
+  } else if (startView && views[startView]) setTimeout(views[startView], 600);
   else if (!db.get("welcomed", false)) { db.set("welcomed", true); setTimeout(openBoard, 800); }
 }
 

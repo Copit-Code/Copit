@@ -2,14 +2,18 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as path from "node:path";
 import { buildClaudeArgs, buildCopilotArgs, parseClaudeLine, toCopilotTool } from "../src/agents/cli";
-import { extractQuestion, patternForDenial } from "../src/agents/manager";
+import { extractQuestion, patternForDenial, patternsForDenial } from "../src/agents/manager";
 import { defaultCopitRules, describeRule, flagsFor, matrixLevel, setMatrixLevel, PermissionRule } from "../src/permissions";
 import { matches, render, triggerMatches } from "../src/automation";
-import { evaluate, newThresholds, overview, periodRange } from "../src/budgets";
+import { budgetCovers, evaluate, newThresholds, overview, periodRange, UsageRecord } from "../src/budgets";
+import { buildActivity, ClaudeTranscripts, prettyModel, segmentsOf, unionMs, usageRecords } from "../src/activity";
+import { costOf } from "../src/pricing";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import { isNewer } from "../src/updater";
 import { projectPathFromRemote } from "../src/git";
 import { CopitDb } from "../src/db";
-import { Agent, Automation, Budget, Run } from "../src/model";
+import { Agent, Automation, Budget } from "../src/model";
 
 test("Claude stream: init, text, tool_use mit Sub-Agent, result mit Denials", () => {
   assert.deepEqual(parseClaudeLine('{"type":"system","subtype":"init","session_id":"s1","model":"opus"}'), [{ t: "init", sessionId: "s1", model: "opus" }]);
@@ -47,6 +51,8 @@ test("Rückfragen und Freigabe-Muster", () => {
   assert.equal(q.clean, "Text");
   assert.equal(patternForDenial("Bash", JSON.stringify({ command: "git push origin main" })), "Bash(git push:*)");
   assert.equal(patternForDenial("Edit", "{}"), "Edit");
+  const cmd = JSON.stringify({ command: 'cd "C:\\tmp a" && git add -A && git commit -m "x; y" | tee log.txt' });
+  assert.deepEqual(patternsForDenial("Bash", cmd), ["Bash(git add:*)", "Bash(git commit:*)", "Bash(tee:*)"]);
 });
 
 test("Permissions: Matrix und Flags (deny schlägt allow)", () => {
@@ -79,29 +85,68 @@ test("Budgets: Woche, Ordner-Filter, Schwellen, Übersicht", () => {
   const now = new Date(2026, 10, 18, 12); // Mi 18.11.2026
   const w = periodRange("week", now);
   assert.equal(new Date(w.from).getDay(), 1);
-  const agent = { id: "a", repo: "C:\\GIT\\Shop", project: "Shop", provider: "claude" } as Agent;
-  const other = { id: "b", repo: "C:\\GIT\\Other", project: "Other", provider: "copilot" } as Agent;
-  const runs: Run[] = [
-    { id: "1", agentId: "a", startedAt: now.getTime() - 3600000, endedAt: now.getTime(), aiMs: 0, toolMs: 0, costUsd: 40, turns: 1, prompt: "" },
-    { id: "2", agentId: "b", startedAt: now.getTime() - 3600000, endedAt: now.getTime(), aiMs: 0, toolMs: 0, costUsd: 99, turns: 1, prompt: "" },
-    { id: "3", agentId: "a", startedAt: now.getTime() - 10 * 86400000, endedAt: now.getTime() - 10 * 86400000 + 1000, aiMs: 0, toolMs: 0, costUsd: 500, turns: 1, prompt: "" },
+  const h = 3600000, t = now.getTime();
+  const recs: UsageRecord[] = [
+    { start: t - h, end: t, costUsd: 40, path: "C:\\GIT\\Shop", project: "Shop", provider: "Desktop app" },
+    { start: t - h, end: t, costUsd: 99, path: "C:\\GIT\\Other", project: "Other", provider: "CLI" },
+    { start: t - 2 * h, end: t - h, costUsd: 5, path: "C:\\GIT\\Shop\\sub", project: "Shop", provider: "CLI" },
+    { start: t - 10 * 86400000, end: t - 10 * 86400000 + 1000, costUsd: 500, path: "C:\\GIT\\Shop", project: "Shop", provider: "CLI" },
   ];
-  const agents = new Map([["a", agent], ["b", other]]);
   const b: Budget = { id: "x", name: "Shop", type: "cost", amount: 50, period: "week", folders: ["C:\\GIT\\Shop"], warnAt: [50, 80, 100], hardStop: true };
-  const s = evaluate(b, runs, agents, now);
-  assert.equal(s.used, 40);
+  const s = evaluate(b, recs, now);
+  assert.equal(s.used, 45); // inkl. Unterordner, ohne alte Woche und ohne Other
   assert.deepEqual(newThresholds(s), [50, 80]);
   assert.deepEqual(newThresholds({ ...s, budget: { ...b, notified: [`${s.periodKey}:50`] } }), [80]);
-  const h = evaluate({ ...b, type: "hours", amount: 2 }, runs, agents, now);
-  assert.equal(Math.round(h.used * 10) / 10, 1);
-  const o = overview(runs, agents, now);
-  assert.equal(o.week.cost, 139);
-  assert.equal(o.byProject[0].project, "Shop"); // 40 + 500 (gleicher Monat) > 99
-  assert.equal(o.byProject[0].cost, 540);
-  assert.equal(o.month.cost, 639);
+  assert.ok(!budgetCovers(b, "C:\\GIT\\Shopware"), "Präfix ohne Trenner zählt nicht");
+  assert.equal(evaluate({ ...b, type: "hours", amount: 2 }, recs, now).used, 2);
+  const o = overview(recs, now);
+  assert.equal(o.week.cost, 144);
+  assert.equal(o.byProject[0].project, "Shop"); // 40 + 5 + 500 (gleicher Monat)
+  assert.equal(o.month.cost, 644);
   assert.equal(o.days.length, 14);
 });
 
+test("Activity: Pausenregel, Vereinigung, Transkript-Parsing mit Streaming-Dedupe", async () => {
+  const m = 60000;
+  assert.deepEqual(segmentsOf([0, 5 * m, 9 * m, 30 * m]), [[0, 9 * m], [30 * m, 30 * m + 30000]]);
+  assert.equal(unionMs([[0, 10], [5, 20], [30, 40]]), 30);
+  assert.ok(costOf({ input: 1e6, output: 0, cacheRead: 0, cacheWrite: 0 }, "claude-opus-5-5") === 5);
+  assert.equal(prettyModel("claude-opus-5-5"), "Opus 5.5");
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "copit-tr-"));
+  fs.mkdirSync(path.join(dir, "C--GIT-Shop"));
+  const t0 = Date.parse("2026-11-16T17:00:00Z");
+  const iso = (min: number) => new Date(t0 + min * m).toISOString();
+  const usage = { input_tokens: 10, output_tokens: 100, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0 };
+  const lines = [
+    { type: "user", sessionId: "s1", cwd: "C:\\GIT\\Shop", gitBranch: "feat/x", entrypoint: "claude-desktop", timestamp: iso(0), message: { content: "Baue Feature X" } },
+    // zwei Zeilen derselben Nachricht (Streaming) → Usage nur einmal
+    { type: "assistant", sessionId: "s1", cwd: "C:\\GIT\\Shop", timestamp: iso(1), message: { id: "m1", model: "claude-opus-5-5", usage, content: [{ type: "text", text: "ok" }] } },
+    { type: "assistant", sessionId: "s1", cwd: "C:\\GIT\\Shop", timestamp: iso(2), message: { id: "m1", model: "claude-opus-5-5", usage, content: [{ type: "tool_use", name: "Read" }] } },
+    { type: "assistant", sessionId: "s1", cwd: "C:\\GIT\\Shop", isSidechain: true, timestamp: iso(5), message: { id: "m2", model: "claude-haiku-5-5", usage, content: [{ type: "tool_use", name: "Bash" }] } },
+    // nach 40 min Pause neue Aktivität
+    { type: "user", sessionId: "s1", cwd: "C:\\GIT\\Shop", timestamp: iso(45), message: { content: "Weiter" } },
+    { type: "assistant", sessionId: "s1", cwd: "C:\\GIT\\Shop", timestamp: iso(50), message: { id: "m3", model: "claude-opus-5-5", usage, content: [] } },
+  ];
+  lines.push({ type: "custom-title", customTitle: "Feature X bauen", sessionId: "s1" } as any);
+  fs.writeFileSync(path.join(dir, "C--GIT-Shop", "s1.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n"));
+  const tr = new ClaudeTranscripts(dir);
+  const raw = await tr.sessions(t0 - 3600000, t0 + 86400000);
+  const acts = buildActivity({ from: t0 - 3600000, to: t0 + 86400000, transcripts: raw, agents: [], runs: [] });
+  assert.equal(acts.length, 1);
+  const a = acts[0];
+  assert.equal(a.title, "Feature X bauen", "custom-title hat Vorrang vor dem ersten Prompt");
+  assert.equal(a.branch, "feat/x");
+  assert.equal(a.entry, "Desktop app");
+  assert.equal(a.prompts, 2);
+  assert.equal(a.toolCalls, 2);
+  assert.equal(a.usage.output, 300, "m1 nur einmal gezählt (m1, m2, m3)");
+  assert.equal(a.segments.length, 2, "Pause > 10 min trennt");
+  assert.equal(unionMs(a.segments), 5 * m + 5 * m);
+  assert.deepEqual(a.models.sort(), ["Haiku 5.5", "Opus 5.5"]);
+  assert.ok(a.costUsd > 0 && !a.costExact);
+  assert.equal(usageRecords(acts).length, 2);
+});
 test("Updater-Versionen und Remote-Pfade", () => {
   assert.ok(isNewer("v0.2.0", "0.1.9"));
   assert.ok(isNewer("0.1.10", "0.1.9"));

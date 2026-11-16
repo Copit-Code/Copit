@@ -15,7 +15,7 @@ const builds = [
   { ...common, entryPoints: ["src/extension.ts"], outfile: "dist/extension.js", platform: "node", format: "cjs", external: ["vscode"], target: "node18" },
   {
     ...common,
-    entryPoints: ["webview/board.ts", "webview/agent.ts", "webview/calendar.ts", "webview/permissions.ts", "webview/automations.ts", "webview/newagent.ts", "webview/budgets.ts"],
+    entryPoints: ["webview/board.ts", "webview/agent.ts", "webview/activity.ts", "webview/permissions.ts", "webview/automations.ts", "webview/newagent.ts", "webview/budgets.ts", "webview/timebooking.ts"],
     outdir: "dist/webview", platform: "browser", format: "iife", target: "es2020",
   },
 ];

@@ -18,9 +18,14 @@ public partial class MainPage : ContentPage
     [
         (Routes.Home, "home", "Cockpit", false),
         (Routes.Time, "calendar", "Zeitbuchung", false),
-        (Routes.Projects, "folder", "Projekte", false),
+        (Routes.Board, "list", "Agents", false),
         (Routes.Session, "chat", "Session", false),
+        (Routes.Activity, "activity", "Activity", false),
+        (Routes.Budgets, "package", "Budgets", false),
+        (Routes.Projects, "folder", "Projekte", false),
+        (Routes.Automations, "flow", "Automationen", false),
         (Routes.Tools, "grid", "Tools", false),
+        (Routes.Customize, "lock", "Customize", true),
         (Routes.Settings, "sliders", "Einstellungen", true),
     ];
 
@@ -49,9 +54,58 @@ public partial class MainPage : ContentPage
             var start = Environment.GetEnvironmentVariable("COPIT_START_ROUTE");
             Show(!string.IsNullOrEmpty(start) ? start : settings.JiraConfigured || settings.GitLabConfigured ? Routes.Home : Routes.Settings, null);
             shell.StartClock();
+            sp.GetRequiredService<SessionManager>(); // verbindet Agents mit dem Automations-Motor
             automations.Start();
+            StartBudgetWatch(data, toasts);
+            StartUpdateWatch(toasts);
             await shell.RefreshConnectionsAsync();
         };
+    }
+
+    private void StartUpdateWatch(ToastService toasts)
+    {
+        var settings = _sp.GetRequiredService<SettingsService>();
+        var updates = _sp.GetRequiredService<UpdateService>();
+        async Task Check()
+        {
+            if (!settings.Settings.Update.Auto) return;
+            try
+            {
+                var r = await updates.CheckAsync();
+                if (r != null) toasts.Show($"Copit {r.Tag} ist verfügbar", "Klicken zum Installieren", NoticeLevel.Info, "update", r.Tag);
+            }
+            catch { /* offline oder kein Token – still */ }
+        }
+        Dispatcher.StartTimer(TimeSpan.FromSeconds(30), () => { _ = Check(); return false; });
+        Dispatcher.StartTimer(TimeSpan.FromHours(6), () => { _ = Check(); return true; });
+    }
+
+    private void StartBudgetWatch(DataService data, ToastService toasts)
+    {
+        async Task Check()
+        {
+            var budgets = data.Budgets.Value.Budgets;
+            if (budgets.Count == 0) return;
+            var mgr = _sp.GetRequiredService<SessionManager>();
+            var now = DateTime.Now;
+            var agents = mgr.Agents.ToList();
+            var recs = await Task.Run(() => ActivityService.Records(mgr.Activity.Build(BudgetService.EarliestNeeded(budgets, now), now.AddMinutes(1), agents, id => data.Project(id)?.SourceFolder)));
+            var changed = false;
+            foreach (var b in budgets)
+            {
+                var st = BudgetService.Evaluate(b, recs, now);
+                foreach (var pct in BudgetService.NewThresholds(st))
+                {
+                    b.Notified.Add($"{st.PeriodKey}:{pct}");
+                    changed = true;
+                    toasts.Show($"Budget {b.Name}: {pct} % erreicht", $"{(b.Type == BudgetType.Cost ? $"${st.Used:0.00} von ${b.Amount:0.##}" : $"{st.Used:0.#} h von {b.Amount:0.#} h")} · {st.PeriodLabel}{(b.HardStop && pct >= 100 ? " · Hard-Stop aktiv" : "")}",
+                        pct >= 100 ? NoticeLevel.Error : NoticeLevel.Warning);
+                }
+            }
+            if (changed) await data.Budgets.SaveAsync();
+        }
+        Dispatcher.StartTimer(TimeSpan.FromMinutes(5), () => { _ = Check(); return true; });
+        Dispatcher.StartTimer(TimeSpan.FromSeconds(20), () => { _ = Check(); return false; });
     }
 
     private static Color C(string key) => (Color)Application.Current!.Resources[key];
@@ -92,6 +146,11 @@ public partial class MainPage : ContentPage
             Routes.Project => _sp.GetRequiredService<ProjectDetailView>(),
             Routes.Session => _sp.GetRequiredService<SessionView>(),
             Routes.Tools => _sp.GetRequiredService<ToolsView>(),
+            Routes.Board => _sp.GetRequiredService<BoardView>(),
+            Routes.Activity => _sp.GetRequiredService<ActivityView>(),
+            Routes.Budgets => _sp.GetRequiredService<BudgetsView>(),
+            Routes.Automations => _sp.GetRequiredService<AutomationsView>(),
+            Routes.Customize => _sp.GetRequiredService<CustomizeView>(),
             _ => _sp.GetRequiredService<SettingsView>(),
         };
         v.IsVisible = false;
@@ -176,7 +235,18 @@ public partial class MainPage : ContentPage
                 {
                     case "book": _nav.Go(Routes.Time, DateOnly.Parse(t.ActionArg!)); break;
                     case "project": _nav.Go(Routes.Project, t.ActionArg); break;
-                    case "automation": _nav.Go(Routes.Tools, "automations"); break;
+                    case "automation": _nav.Go(Routes.Automations); break;
+                    case "update":
+                        _ = Task.Run(async () =>
+                        {
+                            var r = await _sp.GetRequiredService<UpdateService>().CheckAsync(ignoreSkipped: true);
+                            if (r != null) MainThread.BeginInvokeOnMainThread(() => _ = _sp.GetRequiredService<CustomizeView>().InstallAsync(r));
+                        });
+                        break;
+                    case "agent":
+                        var store = _sp.GetRequiredService<SessionStore>();
+                        if (store.Get(t.ActionArg!) is { } ag) _nav.Go(Routes.Session, _sp.GetRequiredService<SessionManager>().Host(ag));
+                        break;
                 }
             })
         });

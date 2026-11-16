@@ -12,20 +12,19 @@ internal static class Palette
 }
 
 /// <summary>
-/// "Arbeitet"-Indikator: 3×3 Raster aus Quadraten, durch das eine Welle läuft.
-/// Im Leerlauf ruht es mit einem einzelnen Akzent-Quadrat.
+/// "Arbeitet"-Indikator wie in der VSCodium-Extension: 2×2 Quadrate, ein oranges Feld springt
+/// im Uhrzeigersinn weiter (harte Schritte, 250 ms). Im Leerlauf leuchtet nur das erste Feld gedimmt.
 /// </summary>
 public class AiOrb : GraphicsView, IDrawable
 {
     public static readonly BindableProperty IsActiveProperty =
-        BindableProperty.Create(nameof(IsActive), typeof(bool), typeof(AiOrb), false);
+        BindableProperty.Create(nameof(IsActive), typeof(bool), typeof(AiOrb), false, propertyChanged: (b, _, _) => ((AiOrb)b).Invalidate());
 
     public bool IsActive { get => (bool)GetValue(IsActiveProperty); set => SetValue(IsActiveProperty, value); }
 
-    // Reihenfolge der Zellen: Spirale im Uhrzeigersinn, Mitte zuletzt
-    private static readonly int[] Order = [0, 1, 2, 5, 8, 7, 6, 3, 4];
-    private readonly float[] _heat = new float[9];
-    private double _t;
+    // Zellen: 0 1 / 2 3 – Reihenfolge im Uhrzeigersinn wie @keyframes cp (1 → 2 → 4 → 3)
+    private static readonly int[] Order = [0, 1, 3, 2];
+    private int _step;
     private bool _running;
 
     public AiOrb()
@@ -41,15 +40,11 @@ public class AiOrb : GraphicsView, IDrawable
     {
         if (_running) return;
         _running = true;
-        Dispatcher.StartTimer(TimeSpan.FromMilliseconds(33), () =>
+        Dispatcher.StartTimer(TimeSpan.FromMilliseconds(250), () =>
         {
             if (!_running) return false;
-            if (!IsVisible) return true;
-            _t += IsActive ? 0.033 * 9 : 0.033 * 1.2;
-            var head = (int)_t % 9;
-            for (int i = 0; i < 9; i++) _heat[i] = Math.Max(0, _heat[i] - (IsActive ? 0.09f : 0.03f));
-            if (IsActive) _heat[Order[head]] = 1f;
-            else _heat[4] = 0.55f + 0.25f * (float)Math.Sin(_t * 2);
+            if (!IsVisible || !IsActive) return true;
+            _step = (_step + 1) % 4;
             Invalidate();
             return true;
         });
@@ -57,24 +52,17 @@ public class AiOrb : GraphicsView, IDrawable
 
     public void Draw(ICanvas canvas, RectF rect)
     {
-        var size = Math.Min(Math.Min(rect.Width, rect.Height), 72f);
-        var gap = size * 0.1f;
-        var cell = (size - gap * 2) / 3f;
+        var size = Math.Min(Math.Min(rect.Width, rect.Height), 64f);
+        var gap = Math.Max(2f, size / 6f);
+        var cell = (size - gap) / 2f;
         var x0 = rect.Center.X - size / 2; var y0 = rect.Center.Y - size / 2;
-        var accent = Palette.Accent; var line = Palette.Line;
-        for (int i = 0; i < 9; i++)
+        var lit = Order[_step];
+        for (int i = 0; i < 4; i++)
         {
-            var x = x0 + (i % 3) * (cell + gap);
-            var y = y0 + (i / 3) * (cell + gap);
-            canvas.StrokeColor = line;
-            canvas.StrokeSize = 1;
-            canvas.DrawRectangle(x + 0.5f, y + 0.5f, cell - 1, cell - 1);
-            var h = _heat[i];
-            if (h > 0.01f)
-            {
-                canvas.FillColor = accent.WithAlpha(h);
-                canvas.FillRectangle(x, y, cell, cell);
-            }
+            var x = x0 + (i % 2) * (cell + gap);
+            var y = y0 + (i / 2) * (cell + gap);
+            canvas.FillColor = IsActive && i == lit ? Palette.Accent : !IsActive && i == 0 ? Palette.Accent.WithAlpha(0.45f) : Palette.Line;
+            canvas.FillRectangle(x, y, cell, cell);
         }
     }
 }
@@ -215,23 +203,57 @@ public class PulseDot : GraphicsView, IDrawable
 /// <summary>Logo: orangefarbenes Quadrat mit eckigem "C".</summary>
 public class LogoView : GraphicsView, IDrawable
 {
-    public LogoView() { Drawable = this; BackgroundColor = Colors.Transparent; InputTransparent = true; }
+    /// <summary>Arbeitet gerade ein Agent? Dann läuft der Punkt wie der 2×2-Loader im Uhrzeigersinn um.</summary>
+    public static readonly BindableProperty BusyProperty =
+        BindableProperty.Create(nameof(Busy), typeof(bool), typeof(LogoView), false, propertyChanged: (b, _, n) => ((LogoView)b).OnBusy((bool)n));
+
+    public bool Busy { get => (bool)GetValue(BusyProperty); set => SetValue(BusyProperty, value); }
+
+    private int _step;
+    private bool _ticking;
+    // Punkt-Positionen im 24er-Raster (Mitte der Klammeröffnung + drei Ecken der Klammer) – im Uhrzeigersinn
+    private static readonly (float X, float Y)[] Spots = [(15.5f, 12f), (15.5f, 8.5f), (8.5f, 8.5f), (8.5f, 15.5f), (15.5f, 15.5f)];
+
+    public LogoView()
+    {
+        Drawable = this; BackgroundColor = Colors.Transparent; InputTransparent = true;
+        // kurze Intro-Animation beim Start
+        Loaded += (_, _) => { _intro = 8; OnBusy(true); };
+    }
+
+    private int _intro;
+
+    private void OnBusy(bool on)
+    {
+        if (!on && _intro <= 0) { _step = 0; Invalidate(); return; }
+        if (_ticking) return;
+        _ticking = true;
+        Dispatcher.StartTimer(TimeSpan.FromMilliseconds(250), () =>
+        {
+            if (_intro > 0) _intro--;
+            if (!Busy && _intro <= 0) { _ticking = false; _step = 0; Invalidate(); return false; }
+            _step = _step % 4 + 1;
+            Invalidate();
+            return true;
+        });
+    }
 
     public void Draw(ICanvas canvas, RectF rect)
     {
         var s = Math.Min(rect.Width, rect.Height);
-        var r = new RectF(rect.Center.X - s / 2, rect.Center.Y - s / 2, s, s);
-        canvas.FillColor = Palette.Accent;
-        canvas.FillRoundedRectangle(r, s * 0.14f);
-        canvas.StrokeColor = Color.FromArgb("#15110E");
-        canvas.StrokeSize = s * 0.12f;
-        canvas.StrokeLineCap = LineCap.Butt;
+        var k = s / 24f;
+        var ox = rect.Center.X - s / 2; var oy = rect.Center.Y - s / 2;
+        float X(float v) => ox + v * k; float Y(float v) => oy + v * k;
+        canvas.StrokeColor = Palette.Text;
+        canvas.StrokeSize = Math.Max(1.2f, 1.8f * k);
+        canvas.StrokeLineCap = LineCap.Square;
         canvas.StrokeLineJoin = LineJoin.Miter;
+        canvas.DrawRectangle(X(3), Y(3), 18 * k, 18 * k);
         var p = new PathF();
-        float l = r.X + s * 0.3f, t = r.Y + s * 0.28f, rr = r.X + s * 0.7f, b = r.Y + s * 0.72f;
-        p.MoveTo(rr, t); p.LineTo(l, t); p.LineTo(l, b); p.LineTo(rr, b);
+        p.MoveTo(X(15.5f), Y(8.5f)); p.LineTo(X(8.5f), Y(8.5f)); p.LineTo(X(8.5f), Y(15.5f)); p.LineTo(X(15.5f), Y(15.5f));
         canvas.DrawPath(p);
-        canvas.FillColor = Color.FromArgb("#15110E");
-        canvas.FillRectangle(rr - s * 0.06f, r.Center.Y - s * 0.06f, s * 0.12f, s * 0.12f);
+        var (dx, dy) = Spots[_step];
+        canvas.FillColor = Palette.Accent;
+        canvas.FillRectangle(X(dx - 1), Y(dy - 1), 2 * k + 0.5f, 2 * k + 0.5f);
     }
 }

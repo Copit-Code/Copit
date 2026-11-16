@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Neues Copit-Release: Version setzen, committen, Tag pushen.
   GitHub Actions baut daraus die .vsix und hängt sie ans Release –

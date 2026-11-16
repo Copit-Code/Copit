@@ -91,6 +91,7 @@ public class ClaudeCliRunner(SettingsService settings) : CliRunnerBase(settings)
         if (!string.IsNullOrWhiteSpace(r.ResumeSessionId)) { args.Add("--resume"); args.Add(r.ResumeSessionId); }
         if (!string.IsNullOrWhiteSpace(r.Model)) { args.Add("--model"); args.Add(r.Model); }
         if (r.AllowedTools.Count > 0) { args.Add("--allowedTools"); args.Add(string.Join(",", r.AllowedTools)); }
+        if (r.DisallowedTools.Count > 0) { args.Add("--disallowedTools"); args.Add(string.Join(",", r.DisallowedTools)); }
         if (!string.IsNullOrWhiteSpace(r.AppendSystemPrompt)) { args.Add("--append-system-prompt"); args.Add(r.AppendSystemPrompt); }
         foreach (var d in r.AdditionalDirs) { args.Add("--add-dir"); args.Add(d); }
         args.AddRange(ProcessRunner.SplitArgs(extraArgs));
@@ -109,7 +110,7 @@ public class ClaudeCliRunner(SettingsService settings) : CliRunnerBase(settings)
         bool gotResult = false;
         await foreach (var e in Pump(cmd, args, request.WorkingDirectory, request.Prompt,
                            ClaudeStreamParser.Parse,
-                           line => line.Length > 0 ? new AgentStatus(line) : null,
+                           line => line.Length > 0 ? new AgentStatusLine(line) : null,
                            (res, err) => null, ct))
         {
             if (e is AgentResult) gotResult = true;
@@ -165,8 +166,9 @@ public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings
             yield break;
         }
         var args = new List<string> { "-p", ComposePrompt(request) };
-        if (request.Mode is AgentMode.Edit or AgentMode.Auto) args.Add("--allow-all-tools");
-        else foreach (var t in request.AllowedTools) { args.Add("--allow-tool"); args.Add(t); }
+        if (request.Mode is AgentMode.Auto) args.Add("--allow-all-tools");
+        else { var allow = request.AllowedTools.Select(Services.PermissionService.ToCopilotTool).Where(t => t != null).Cast<string>().ToHashSet(); if (request.Mode == AgentMode.Edit) allow.Add("write"); foreach (var t in allow) { args.Add("--allow-tool"); args.Add(t); } }
+        foreach (var t in request.DisallowedTools.Select(Services.PermissionService.ToCopilotTool).Where(t => t != null).Distinct()) { args.Add("--deny-tool"); args.Add(t!); }
         var model = request.Model;
         if (!string.IsNullOrWhiteSpace(model)) { args.Add("--model"); args.Add(model); }
         foreach (var d in request.AdditionalDirs) { args.Add("--add-dir"); args.Add(d); }
@@ -182,7 +184,7 @@ public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings
                                lock (full) full.AppendLine(clean);
                                return [new AgentTextDelta(clean + "\n")];
                            },
-                           line => line.Length > 0 ? new AgentStatus(GitLabClient.StripAnsi(line)) : null,
+                           line => line.Length > 0 ? new AgentStatusLine(GitLabClient.StripAnsi(line)) : null,
                            (res, err) =>
                            {
                                string text;

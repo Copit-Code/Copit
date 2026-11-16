@@ -1,16 +1,63 @@
 name: Release
 
-# Ein Tag "vX.Y.Z" baut die VSCodium-Extension und veröffentlicht sie als GitHub-Release.
-# Der Auto-Updater in Copit prüft dieses Release und installiert die .vsix automatisch.
+# Ein Tag "vX.Y.Z" baut
+#  - die Windows-App (MAUI, eigenständig) + Installer "Copit-Setup-X.Y.Z.exe" (Inno Setup) + portables ZIP
+#  - die VSCodium-Extension (.vsix)
+# und veröffentlicht alles als GitHub-Release. Die Auto-Updater in App und Extension holen sich dieses Release.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (z. B. 0.2.1) – nur für Testläufe ohne Tag"
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version bestimmen
+        id: v
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}".TrimStart("v") } else { "${{ inputs.version }}" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: MAUI-Workload
+        run: dotnet workload install maui-windows
+      - name: Tests
+        run: dotnet test tests/Copit.Core.Tests/Copit.Core.Tests.csproj -c Release
+      - name: App veröffentlichen
+        run: >
+          dotnet publish src/Copit/Copit.csproj -c Release -f net9.0-windows10.0.19041.0 -r win-x64 --self-contained true
+          -p:WindowsPackageType=None -p:WindowsAppSDKSelfContained=true
+          -p:Version=${{ steps.v.outputs.version }} -p:ApplicationDisplayVersion=${{ steps.v.outputs.version }}
+          -p:InformationalVersion=${{ steps.v.outputs.version }}
+          -o artifacts/publish
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Installer bauen
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.v.outputs.version }}" "/DSourceDir=..\artifacts\publish" installer\copit.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC fehlgeschlagen" }
+          Compress-Archive -Path artifacts\publish\* -DestinationPath "dist\Copit-${{ steps.v.outputs.version }}-win-x64-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  extension:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,15 +70,34 @@ jobs:
           cache: npm
           cache-dependency-path: vscode/copit/package-lock.json
       - run: npm ci
-      - name: Version aus Tag setzen
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      - name: Version setzen
+        run: |
+          V="${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}"
+          npm version "${V#v}" --no-git-tag-version --allow-same-version
+          echo "V=${V#v}" >> $GITHUB_ENV
       - run: npm test
       - name: VSIX bauen
         run: |
           mkdir -p ../../dist
           npm run package
-          mv ../../dist/copit.vsix "../../dist/copit-${GITHUB_REF_NAME#v}.vsix"
+          mv ../../dist/copit.vsix "../../dist/copit-${V}.vsix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: dist/*.vsix
+
+  release:
+    needs: [windows, extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/copit-*.vsix
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          name: Copit ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          draft: ${{ github.ref_type != 'tag' }}
+          files: dist/*
           generate_release_notes: true

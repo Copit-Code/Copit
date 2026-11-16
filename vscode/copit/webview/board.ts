@@ -54,7 +54,7 @@ function render() {
     ${(state.budget ?? []).map((b) => `<div class="bud" title="${esc(b.text)}"><span class="cap">${esc(b.label)}</span><div class="bar ${b.fraction >= 1 ? "over" : b.fraction >= .8 ? "warn" : ""}"><i style="width:${Math.min(100, b.fraction * 100)}%"></i></div></div>`).join("")}
     <input id="q" data-keep class="search" placeholder="Suchen…" value="${esc(filter)}">
     <select id="proj" data-keep><option value="">Alle Projekte</option>${state.projects.map((p) => `<option ${p === project ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>
-    <button data-act="calendar" class="ghost">${icon("calendar")} Kalender</button>
+    <button data-act="calendar" class="ghost">${icon("calendar")} Activity</button>
     <button class="primary" data-act="new">${icon("plus")} Neuer Agent</button>
   </div>
   <div class="board">

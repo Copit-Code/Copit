@@ -82,7 +82,59 @@ public class DayEntry
     /// <summary>Zuletzt erzeugte Vorschläge (bleiben nach Neustart erhalten).</summary>
     public List<BookingSuggestion> LastSuggestions { get; set; } = [];
     public string LastSummary { get; set; } = "";
+    /// <summary>Offene Rückfragen der KI zu diesem Tag.</summary>
+    public List<TimeQuestion> Questions { get; set; } = [];
 }
+
+/// <summary>Rückfrage der KI beim Buchen (Antwort wird als Wissen gemerkt).</summary>
+public class TimeQuestion
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Question { get; set; } = "";
+    public List<string> Options { get; set; } = [];
+    public string? Answer { get; set; }
+}
+
+/// <summary>Gelerntes Wissen aus beantworteten Rückfragen.</summary>
+public class TimeFact
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Question { get; set; } = "";
+    public string Answer { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+}
+
+/// <summary>Gelernte Zuordnung Thema/Repo → Ticket (z. B. Weiterentwicklungsprojekte).</summary>
+public class TopicMapping
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Topic { get; set; } = "";
+    public string Ticket { get; set; } = "";
+    public string? Repo { get; set; }
+    public int Hits { get; set; }
+    public DateTime LastUsed { get; set; } = DateTime.Now;
+    /// <summary>Vom Nutzer festgelegt – hat Vorrang.</summary>
+    public bool Manual { get; set; }
+}
+
+public class TimeMemory
+{
+    public List<TopicMapping> Topics { get; set; } = [];
+    public List<TimeFact> Facts { get; set; } = [];
+}
+
+/// <summary>Welche Quellen die Analyse nutzt.</summary>
+public class BookingSources
+{
+    public bool Tickets { get; set; } = true;
+    public bool Commits { get; set; } = true;
+    public bool GitLab { get; set; } = true;
+    public bool Sessions { get; set; } = true;
+    public bool Note { get; set; } = true;
+}
+
+/// <summary>KI-Session eines Tages (aktive Minuten) als Signal für die Verteilung.</summary>
+public record DaySession(string Title, string Project, string? Branch, string? Ticket, int Minutes);
 
 public class BookingSuggestion
 {
@@ -94,7 +146,16 @@ public class BookingSuggestion
     public double Confidence { get; set; } = 0.7;
     public string? Account { get; set; }
     public bool AccountFromMemory { get; set; }
+    /// <summary>Account kommt direkt aus dem Jira-Ticket (Account-Feld).</summary>
+    public bool AccountFromIssue { get; set; }
+    /// <summary>Account, den Tempo nach dem Buchen tatsächlich zurückgemeldet hat.</summary>
+    public string? BookedAccount { get; set; }
+    /// <summary>Geschätzter Aufwand einer Person ohne KI (h).</summary>
+    public double HumanHours { get; set; }
     public bool Booked { get; set; }
+    /// <summary>Kurzes Thema (2–4 Wörter) – Schlüssel fürs Themen-Gedächtnis.</summary>
+    public string? Topic { get; set; }
+    public string? Repo { get; set; }
 }
 
 public class AccountMemory
@@ -106,6 +167,6 @@ public class AccountMemory
     public List<string> KnownAccounts { get; set; } = [];
 }
 
-public record TempoAccount(string Key, string Name);
+public record TempoAccount(string Key, string Name, string Id = "");
 
 public record PermissionDenial(string ToolName, string ToolUseId, string InputJson);

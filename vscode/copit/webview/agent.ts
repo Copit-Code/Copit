@@ -3,7 +3,7 @@ import { COLORS, delegate, dur, esc, icon, md, mount, onState, send, STATUS_LABE
 interface Ev { id: number; runId: string; ts: number; kind: string; parentToolId?: string; toolId?: string; name?: string; text?: string; durationMs?: number; isError?: boolean }
 interface AgentDto {
   id: string; title: string; ticket?: string; project: string; branch?: string; cwd: string; status: string; provider: string; mode: string; model?: string;
-  aiMs: number; agentMs: number; toolMs: number; costUsd: number; contextTokens: number; turns: number; linesAdded: number; linesRemoved: number; filesChanged: number;
+  aiMs: number; agentMs: number; toolMs: number; costUsd: number; contextTokens: number; tokens?: number; outputTokens?: number; turns: number; linesAdded: number; linesRemoved: number; filesChanged: number;
   pendingQuestion?: string; pendingPermissions?: { tool: string; input: string; pattern: string }[]; running: boolean; error?: string; startedAt?: number;
 }
 interface State { agent: AgentDto; events: Ev[]; files: { path: string; added: number; removed: number; status: string }[]; columns: { id: string; title: string }[] }
@@ -143,11 +143,12 @@ function render() {
     ${a.running ? `<button class="danger" data-act="stop">${icon("stop", 12)} Stopp</button>` : `<button data-act="run">${icon("play", 12)} ${a.turns ? "Erneut" : "Starten"}</button>`}
   </div>
   <div class="metrics">
-    ${metric("AI Time", dur(a.aiMs), "Zeit, in der das Modell generiert hat")}
     ${metric("Agent Time", dur(a.agentMs + (a.running && a.startedAt ? Date.now() - a.startedAt : 0)), "Gesamtlaufzeit (Wanduhr)")}
-    ${metric("Tool Time", dur(a.toolMs), "Ausführung von Tools/Befehlen")}
+    ${metric("Modell", dur(a.aiMs), "Zeit, in der das Modell generiert hat")}
+    ${metric("Tools", dur(a.toolMs), "Ausführung von Tools/Befehlen")}
     ${metric("Turns", String(a.turns))}
-    ${metric("Kosten", usd(a.costUsd))}
+    ${metric("Tokens", tokens(a.tokens ?? 0), `${tokens(a.outputTokens ?? 0)} Output`)}
+    ${metric("Kosten", usd(a.costUsd), "laut Claude CLI")}
     ${metric("Kontext", tokens(a.contextTokens))}
     ${metric("Änderungen", `<span class="add">+${a.linesAdded}</span> <span class="del">-${a.linesRemoved}</span>`)}
     <div class="spacer"></div>

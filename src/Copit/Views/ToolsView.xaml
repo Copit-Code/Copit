@@ -30,13 +30,6 @@
                 <Label Grid.Column="2" Text="Code-Review" FontSize="13" VerticalOptions="Center" />
             </Grid>
             <Grid ColumnDefinitions="2,30,*" HeightRequest="30" BackgroundColor="Transparent">
-                <Grid.Triggers><DataTrigger TargetType="Grid" Binding="{Binding IsAutomations}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource CardHover}" /></DataTrigger></Grid.Triggers>
-                <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="automations" /></Grid.GestureRecognizers>
-                <BoxView Color="{StaticResource Accent}" IsVisible="{Binding IsAutomations}" />
-                <c:Icon Grid.Column="1" Name="activity" Size="14" />
-                <Label Grid.Column="2" Text="Automationen" FontSize="13" VerticalOptions="Center" />
-            </Grid>
-            <Grid ColumnDefinitions="2,30,*" HeightRequest="30" BackgroundColor="Transparent">
                 <Grid.Triggers><DataTrigger TargetType="Grid" Binding="{Binding IsStandup}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource CardHover}" /></DataTrigger></Grid.Triggers>
                 <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="standup" /></Grid.GestureRecognizers>
                 <BoxView Color="{StaticResource Accent}" IsVisible="{Binding IsStandup}" />
@@ -184,85 +177,6 @@
             </ScrollView>
         </Grid>
 
-        <!-- ================= Automationen ================= -->
-        <Grid Grid.Column="1" IsVisible="{Binding IsAutomations}" ColumnDefinitions="*,400">
-            <ScrollView Padding="28,24">
-                <VerticalStackLayout Spacing="14">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <VerticalStackLayout>
-                            <Label Text="Automationen" Style="{StaticResource H1}" />
-                            <Label Text="Copit arbeitet im Hintergrund: Erinnerungen, Buchungs-Checks, Pipeline-Wächter und geplante KI-Prompts." Style="{StaticResource Sub}" />
-                        </VerticalStackLayout>
-                        <Button Grid.Column="1" Text="Automation" Style="{StaticResource Primary}" Command="{Binding NewAutomationCommand}" VerticalOptions="Center" />
-                    </Grid>
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Automations}" Spacing="10">
-                        <BindableLayout.ItemTemplate>
-                            <DataTemplate>
-                                <Border Style="{StaticResource CardBox}" Padding="16,12">
-                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="12">
-                                        <Switch IsToggled="{Binding Enabled}" VerticalOptions="Center" />
-                                        <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                                            <Label Text="{Binding Name}" FontAttributes="Bold" />
-                                            <Label FontSize="11.5" TextColor="{StaticResource Muted}">
-                                                <Label.FormattedText>
-                                                    <FormattedString>
-                                                        <Span Text="{Binding KindText}" TextColor="{StaticResource Text2}" />
-                                                        <Span Text="·  " />
-                                                        <Span Text="{Binding Schedule}" />
-                                                        <Span Text="·  " />
-                                                        <Span Text="{Binding LastRunText}" />
-                                                    </FormattedString>
-                                                </Label.FormattedText>
-                                            </Label>
-                                        </VerticalStackLayout>
-                                        <c:PulseDot Grid.Column="2" Color="{StaticResource Cyan}" Pulsing="{Binding Running}" IsVisible="{Binding Running}" />
-                                        <Button Grid.Column="3" Text="Jetzt" Style="{StaticResource Chip}" VerticalOptions="Center"
-                                                Command="{Binding Source={x:Reference Root}, Path=BindingContext.RunNowCommand}" CommandParameter="{Binding .}" />
-                                        <c:IconButton Icon="pencil" Grid.Column="4" Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditAutomationCommand}" CommandParameter="{Binding .}" />
-                                        <c:IconButton Icon="trash" Grid.Column="5" Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteAutomationCommand}" CommandParameter="{Binding .}" />
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </BindableLayout.ItemTemplate>
-                    </VerticalStackLayout>
-                </VerticalStackLayout>
-            </ScrollView>
-
-            <Grid Grid.Column="1" BackgroundColor="{StaticResource Bg2}" RowDefinitions="Auto,*" Padding="18,24">
-                <Label Text="LETZTE LÄUFE" Style="{StaticResource Caption}" Margin="0,0,0,10" />
-                <ScrollView Grid.Row="1">
-                    <VerticalStackLayout Spacing="6">
-                        <Border Style="{StaticResource CardBox}" IsVisible="{Binding SelectedRun, Converter={StaticResource NotNull}}" Margin="0,0,0,10">
-                            <VerticalStackLayout Spacing="8">
-                                <Grid ColumnDefinitions="*,Auto,Auto">
-                                    <Label Text="{Binding SelectedRun.AutomationName}" Style="{StaticResource H3}" />
-                                    <c:IconButton Icon="copy" Grid.Column="1" Command="{Binding CopyCommand}" CommandParameter="{Binding SelectedRun.Output}" />
-                                    <c:IconButton Icon="x" Grid.Column="2" Command="{Binding CloseRunCommand}" />
-                                </Grid>
-                                <c:MarkdownView Text="{Binding SelectedRun.Output}" />
-                            </VerticalStackLayout>
-                        </Border>
-                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Runs}" Spacing="4">
-                            <BindableLayout.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Style="{StaticResource PanelBox}" Padding="10,7">
-                                        <Border.GestureRecognizers>
-                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.ShowRunCommand}" CommandParameter="{Binding .}" />
-                                        </Border.GestureRecognizers>
-                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                                            <Grid><c:Icon Name="check" Color="{StaticResource Green}" Size="13" IsVisible="{Binding Success}" /><c:Icon Name="x" Color="{StaticResource Red}" Size="13" IsVisible="{Binding Success, Converter={StaticResource Not}}" /></Grid>
-                                            <Label Grid.Column="1" Text="{Binding AutomationName}" FontSize="12" LineBreakMode="TailTruncation" />
-                                            <Label Grid.Column="2" Text="{Binding At, StringFormat='{0:dd.MM. HH:mm}'}" FontSize="11" TextColor="{StaticResource Muted}" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </BindableLayout.ItemTemplate>
-                        </VerticalStackLayout>
-                    </VerticalStackLayout>
-                </ScrollView>
-            </Grid>
-        </Grid>
-
         <!-- ================= Standup ================= -->
         <ScrollView Grid.Column="1" IsVisible="{Binding IsStandup}" Padding="28,24">
             <VerticalStackLayout Spacing="16" MaximumWidthRequest="900" HorizontalOptions="Start">
@@ -349,58 +263,6 @@
             </VerticalStackLayout>
         </ScrollView>
 
-        <!-- ================= Automation-Editor ================= -->
-        <Grid Grid.ColumnSpan="2" IsVisible="{Binding ShowEditor}" BackgroundColor="#D0100C0A">
-            <Border Style="{StaticResource CardBox}" WidthRequest="560" VerticalOptions="Center" HorizontalOptions="Center" Padding="24">
-                <VerticalStackLayout Spacing="12">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <Label Text="Automation" Style="{StaticResource H2}" />
-                        <c:IconButton Icon="x" Grid.Column="1" Command="{Binding CloseEditorCommand}" />
-                    </Grid>
-                    <Label Text="NAME" Style="{StaticResource Caption}" />
-                    <Entry Text="{Binding EdName}" Placeholder="z.B. Morgens offene MRs zusammenfassen" />
-                    <Label Text="ART" Style="{StaticResource Caption}" />
-                    <FlexLayout BindableLayout.ItemsSource="{Binding Kinds}" Wrap="Wrap">
-                        <BindableLayout.ItemTemplate>
-                            <DataTemplate>
-                                <Button Text="{Binding .}" Style="{StaticResource Chip}" Margin="0,0,6,6"
-                                        Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickKindCommand}" CommandParameter="{Binding .}" />
-                            </DataTemplate>
-                        </BindableLayout.ItemTemplate>
-                    </FlexLayout>
-                    <Label Text="{Binding EdKind, StringFormat='Gewählt: {0}'}" TextColor="{StaticResource Cyan}" FontSize="12" />
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
-                        <VerticalStackLayout Spacing="4" IsVisible="{Binding EdIsWatch, Converter={StaticResource Not}}">
-                            <Label Text="UHRZEIT (MO–FR)" Style="{StaticResource Caption}" />
-                            <Entry Text="{Binding EdTime}" Placeholder="HH:mm" />
-                        </VerticalStackLayout>
-                        <VerticalStackLayout Grid.Column="1" Spacing="4" IsVisible="{Binding EdIsWatch}">
-                            <Label Text="INTERVALL (MIN)" Style="{StaticResource Caption}" />
-                            <Entry Text="{Binding EdInterval}" Keyboard="Numeric" />
-                        </VerticalStackLayout>
-                    </Grid>
-                    <VerticalStackLayout Spacing="4" IsVisible="{Binding EdNeedsPrompt}">
-                        <Label Text="PROMPT / NACHRICHT" Style="{StaticResource Caption}" />
-                        <Editor Text="{Binding EdPrompt}" AutoSize="TextChanges" MinimumHeightRequest="80"
-                                Placeholder="z.B. Prüfe die TODOs im Code und fasse die wichtigsten 5 zusammen" />
-                        <Label Text="PROJEKT (ARBEITSORDNER FÜR KI-PROMPTS)" Style="{StaticResource Caption}" Margin="0,6,0,0" />
-                        <FlexLayout BindableLayout.ItemsSource="{Binding Projects}" Wrap="Wrap">
-                            <BindableLayout.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Text="{Binding Name}" Style="{StaticResource Chip}" Margin="0,0,6,6"
-                                            Command="{Binding Source={x:Reference Root}, Path=BindingContext.PickEdProjectCommand}" CommandParameter="{Binding .}" />
-                                </DataTemplate>
-                            </BindableLayout.ItemTemplate>
-                        </FlexLayout>
-                        <Label Text="{Binding EdProject.Name, StringFormat='Projekt: {0}'}" TextColor="{StaticResource Cyan}" FontSize="12" />
-                    </VerticalStackLayout>
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10" Margin="0,6,0,0">
-                        <Button Text="Abbrechen" Command="{Binding CloseEditorCommand}" />
-                        <Button Grid.Column="1" Text="Speichern" Style="{StaticResource Primary}" Command="{Binding SaveAutomationCommand}" />
-                    </Grid>
-                </VerticalStackLayout>
-            </Border>
-        </Grid>
     </Grid>
 </ContentView>
 

@@ -131,7 +131,6 @@ onState<State>((s) => {
 delegate({
   select: (el, ev) => {
     if ((ev.target as HTMLElement).closest(".toggle")) return;
-    if (dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
     selected = el.dataset.arg; draft = structuredClone(state!.automations.find((a) => a.id === selected)); dirty = false; render();
   },
   toggle: (el, ev) => { ev.stopPropagation(); send("act", { act: "toggle", arg: el.dataset.arg }); },
@@ -148,7 +147,7 @@ delegate({
   "act.down": (el) => { pull(); const i = +el.dataset.arg!; if (i < draft!.actions.length - 1) [draft!.actions[i + 1], draft!.actions[i]] = [draft!.actions[i], draft!.actions[i + 1]]; dirty = true; render(); },
   save: () => { pull(); if (draft!.id.startsWith("new-")) draft!.id = draft!.id.slice(4); selected = draft!.id; dirty = false; send("act", { act: "save", value: JSON.stringify(draft) }); },
   test: () => { pull(); send("act", { act: "test", value: JSON.stringify(draft) }); },
-  delete: () => { if (draft && confirm(`"${draft.name}" löschen?`)) { send("act", { act: "delete", arg: draft.id }); draft = undefined; selected = undefined; dirty = false; render(); } },
+  delete: () => { if (draft) send("act", { act: "delete", arg: draft.id, value: draft.name }); },
 });
 document.addEventListener("change", (e) => {
   const t = e.target as HTMLElement;

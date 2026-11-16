@@ -42,6 +42,9 @@ export interface Agent {
   costUsd: number;
   contextTokens: number;
   turns: number;
+  /** Summe aller Tokens (Input + Output + Cache) */
+  tokens?: number;
+  outputTokens?: number;
   linesAdded: number;
   linesRemoved: number;
   filesChanged: number;
@@ -82,6 +85,11 @@ export interface Run {
   turns: number;
   prompt: string;
   ok?: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  model?: string;
 }
 
 // ---------------- Permissions ----------------

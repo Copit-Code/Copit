@@ -112,14 +112,116 @@ public class ParsingTests
     }
 
     [Fact]
+    public void ParsesQuestionsAndUnassignedBlocks()
+    {
+        var plan = TimeBookingService.ParsePlan("{\"summary\":\"x\",\"bookings\":[{\"issueKey\":\"\",\"hours\":2,\"topic\":\"Bildgenerierung\",\"repo\":\"ai-backend\"}],\"questions\":[{\"question\":\"Wohin gehören Dailys?\",\"options\":[\"ORG-1\",\"HAW-2\"]}]}");
+        Assert.Single(plan.Bookings);
+        Assert.Equal("", plan.Bookings[0].IssueKey);
+        Assert.Equal("ai-backend", plan.Bookings[0].Repo);
+        Assert.Equal(["ORG-1", "HAW-2"], plan.Questions[0].Options);
+    }
+
+    [Fact]
+    public void LearnsTopicsAndFacts()
+    {
+        var map = new List<TopicMapping>();
+        TimeBookingService.LearnTopic(map, "Checkout", "shop", "SHOP-1");
+        TimeBookingService.LearnTopic(map, "checkout", "shop", "SHOP-1");
+        Assert.Equal(2, map[0].Hits);
+        TimeBookingService.LearnTopic(map, "Checkout", "shop", "WEI-9", 3);
+        Assert.Equal("WEI-9", map[0].Ticket);
+        TimeBookingService.LearnTopic(map, "Checkout", "shop", "SHOP-1");
+        Assert.Equal("WEI-9", map[0].Ticket);
+        var facts = new List<TimeFact>();
+        TimeBookingService.LearnFact(facts, "Dailys?", "ORG-1");
+        TimeBookingService.LearnFact(facts, "dailys?", "ORG-2");
+        Assert.Single(facts);
+        Assert.Equal("ORG-2", facts[0].Answer);
+    }
+
+    [Fact]
+    public void HumanEffortNeverPadsButCaps()
+    {
+        var items = new List<BookingSuggestion> { new() { IssueKey = "A-1", Hours = 1.1 }, new() { IssueKey = "A-2", Hours = 2.4 } };
+        TimeBookingService.Cap(items, 8, 15);
+        Assert.Equal(3.5, items.Sum(i => i.Hours), 3); // nicht auf 8 h aufgefüllt
+        var big = new List<BookingSuggestion> { new() { IssueKey = "A-1", Hours = 6 }, new() { IssueKey = "A-2", Hours = 6 } };
+        TimeBookingService.Cap(big, 8, 15);
+        Assert.Equal(8, big.Sum(i => i.Hours), 3); // aber nie mehr als das Ziel
+    }
+
+    [Fact]
+    public void UpdaterComparesVersions()
+    {
+        Assert.Equal(new Version(1, 2, 3), UpdateService.Parse("v1.2.3"));
+        Assert.Equal(new Version(0, 3, 0), UpdateService.Parse("0.3.0+abc123"));
+        Assert.Equal(new Version(1, 0, 0), UpdateService.Parse("1.0"));
+        Assert.True(UpdateService.IsNewer(new Version(0, 3, 0), new Version(0, 2, 9)));
+        Assert.False(UpdateService.IsNewer(new Version(0, 3, 0), new Version(0, 3, 0, 0)));
+    }
+
+    [Fact]
     public void AutomationDueOncePerDay()
     {
-        var a = new Automation { Kind = AutomationKind.BookingCheck, TimeOfDay = "16:30", Days = [DayOfWeek.Monday] };
+        var a = new Automation { Trigger = "schedule", TriggerParams = new() { ["time"] = "16:30", ["days"] = "Mo" } };
         var monday = new DateTime(2026, 11, 16, 16, 45, 0);
         Assert.True(AutomationService.IsDue(a, monday));
         a.LastRun = monday;
         Assert.False(AutomationService.IsDue(a, monday.AddMinutes(10)));
-        Assert.False(AutomationService.IsDue(new Automation { TimeOfDay = "16:30", Days = [DayOfWeek.Monday] }, monday.AddDays(1)));
+        Assert.False(AutomationService.IsDue(new Automation { Trigger = "schedule", TriggerParams = new() { ["time"] = "16:30", ["days"] = "Mo" } }, monday.AddDays(1)));
+    }
+
+    [Fact]
+    public void AutomationTriggerAndConditions()
+    {
+        var a = new Automation { Trigger = "agent.moved", TriggerParams = new() { ["to"] = "InProgress" }, Conditions = [new() { Field = "ticket", Op = "matches", Value = "^SHOP-" }] };
+        Assert.True(AutomationService.TriggerMatches(a, new("agent.moved", new() { ["to"] = "inprogress", ["ticket"] = "SHOP-12" })));
+        Assert.False(AutomationService.TriggerMatches(a, new("agent.moved", new() { ["to"] = "Review", ["ticket"] = "SHOP-12" })));
+        Assert.False(AutomationService.TriggerMatches(a, new("agent.moved", new() { ["to"] = "InProgress", ["ticket"] = "ABC-1" })));
+        Assert.Equal("Fix SHOP-1 ", AutomationService.Render("Fix {{ ticket }} {{missing}}", new Dictionary<string, string> { ["ticket"] = "SHOP-1" }));
+    }
+
+    [Fact]
+    public void PermissionPatternsForChainedCommands()
+    {
+        Assert.Equal(["git add", "git commit -m \"a && b\"", "npm test"], PermissionService.SplitCommands("git add . && git commit -m \"a && b\" | npm test").Select(x => x.Replace(" .", "")).ToArray());
+        Assert.Equal(["Bash(git add:*)", "Bash(git commit:*)"], PermissionService.PatternsForDenial("Bash", "{\"command\":\"cd C:/x && git add . && git commit -m x\"}"));
+        Assert.Equal(["Edit"], PermissionService.PatternsForDenial("Edit", "{}"));
+        Assert.Equal("shell(git push)", PermissionService.ToCopilotTool("Bash(git push:*)"));
+        Assert.Equal("write", PermissionService.ToCopilotTool("Edit"));
+        Assert.Null(PermissionService.ToCopilotTool("WebFetch"));
+    }
+
+    [Fact]
+    public void ActivityUnionAndSegments()
+    {
+        var t0 = new DateTime(2026, 11, 16, 9, 0, 0);
+        var segs = ActivityService.SegmentsOf([t0, t0.AddMinutes(5), t0.AddMinutes(9), t0.AddMinutes(40), t0.AddMinutes(45)]);
+        Assert.Equal(2, segs.Count);
+        Assert.Equal(TimeSpan.FromMinutes(9), segs[0].Item2 - segs[0].Item1);
+        // parallel: 9:00-10:00 und 9:30-10:30 → 1,5 h
+        Assert.Equal(TimeSpan.FromMinutes(90), ActivityService.Union([(t0, t0.AddHours(1)), (t0.AddMinutes(30), t0.AddMinutes(90))]));
+        Assert.Equal(25 / 1_000_000d * 1000 + 5 / 1_000_000d * 1000, Pricing.Cost(1000, 1000, 0, 0, "claude-opus-4-1"), 6);
+        Assert.Equal("Opus 4.1", Pricing.PrettyModel("claude-opus-4-1-20250805"));
+    }
+
+    [Fact]
+    public void BudgetEvaluatesWeekAndFolders()
+    {
+        var now = new DateTime(2026, 11, 18, 12, 0, 0); // Mittwoch KW 47
+        var recs = new List<UsageRecord>
+        {
+            new(new DateTime(2026, 11, 16, 9, 0, 0), new DateTime(2026, 11, 16, 11, 0, 0), 10, @"C:\GIT\Shop", "Shop", "CLI"),
+            new(new DateTime(2026, 11, 17, 9, 0, 0), new DateTime(2026, 11, 17, 10, 0, 0), 5, @"C:\GIT\Shop\api", "Shop/api", "CLI"),
+            new(new DateTime(2026, 11, 12, 9, 0, 0), new DateTime(2026, 11, 12, 10, 0, 0), 99, @"C:\GIT\Shop", "Shop", "CLI"),
+            new(new DateTime(2026, 11, 17, 9, 0, 0), new DateTime(2026, 11, 17, 10, 0, 0), 7, @"C:\GIT\Other", "Other", "CLI"),
+        };
+        var cost = BudgetService.Evaluate(new Budget { Amount = 30, Folders = [@"C:\GIT\Shop"] }, recs, now);
+        Assert.Equal(15, cost.Used, 3);
+        Assert.Equal("KW 47", cost.PeriodLabel);
+        var hours = BudgetService.Evaluate(new Budget { Type = BudgetType.Hours, Amount = 10 }, recs, now);
+        Assert.Equal(4, hours.Used, 3);
+        Assert.Equal([80], BudgetService.NewThresholds(new BudgetStatus(new Budget { WarnAt = [80, 100] }, 9, 0.9, "", "k")));
     }
 
     [Fact]

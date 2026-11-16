@@ -112,14 +112,16 @@ function render() {
 onState<State>((s) => {
   state = s;
   if (s.picked && draft && !draft.folders.includes(s.picked)) { pull(); draft.folders.push(s.picked); dirty = true; }
-  if (draft && !dirty) draft = structuredClone(s.budgets.find((b) => b.id === draft!.id)) ?? draft;
+  if (draft && !dirty) {
+    const cur = s.budgets.find((b) => b.id === draft!.id);
+    if (cur) draft = structuredClone(cur); else { draft = undefined; sel = "overview"; }
+  }
   render();
 });
 
 delegate({
   sel: (el) => {
     const id = el.dataset.arg!;
-    if (dirty && !confirm("Ungespeicherte Änderungen verwerfen?")) return;
     sel = id; dirty = false;
     draft = id === "overview" ? undefined : structuredClone(state!.budgets.find((b) => b.id === id));
     render();
@@ -133,8 +135,8 @@ delegate({
   unfolder: (el) => { pull(); draft!.folders.splice(+el.dataset.arg!, 1); dirty = true; render(); },
   browse: () => { pull(); send("act", { act: "browse" }); },
   cancel: () => { dirty = false; sel = "overview"; draft = undefined; render(); },
-  save: () => { pull(); if (!draft!.name.trim()) { alert("Name fehlt"); return; } dirty = false; send("act", { act: "save", value: JSON.stringify(draft) }); },
-  delete: () => { if (confirm(`Budget "${draft!.name}" löschen?`)) { send("act", { act: "delete", arg: draft!.id }); draft = undefined; sel = "overview"; dirty = false; } },
+  save: () => { pull(); if (!draft!.name.trim()) draft!.name = "Budget"; dirty = false; send("act", { act: "save", value: JSON.stringify(draft) }); },
+  delete: () => send("act", { act: "delete", arg: draft!.id, value: draft!.name }),
 });
 document.addEventListener("change", (e) => {
   const t = e.target as HTMLSelectElement;

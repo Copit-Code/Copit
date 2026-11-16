@@ -313,7 +313,8 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         try
         {
             var est = double.TryParse(TicketEstimate.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var h) ? h : 0;
-            var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey);
+            var epicAcc = string.IsNullOrWhiteSpace(Project.EpicKey) ? null : (await _hub.RequireJira.GetIssueAsync(Project.EpicKey))?.Account;
+            var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, epicAcc);
             ShowTicket = false;
             _toast.Success($"Ticket {key} angelegt", TicketSummary);
             await LoadAsync();

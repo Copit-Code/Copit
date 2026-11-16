@@ -36,28 +36,33 @@
 
         <!-- ===== Flow: Agent ===== -->
         <DataTemplate x:Key="AssistantTpl">
-            <Grid ColumnDefinitions="16,22,*" ColumnSpacing="6" RowDefinitions="Auto,Auto" Padding="0,8,0,4">
+            <Grid ColumnDefinitions="16,22,*" ColumnSpacing="6" RowDefinitions="Auto,Auto" Padding="0,8,0,4" Margin="{Binding Indent}">
                 <BoxView WidthRequest="7" HeightRequest="7" Color="{StaticResource Accent}" VerticalOptions="Start" Margin="0,5,0,0" HorizontalOptions="Start" />
                 <BoxView Grid.Row="1" WidthRequest="1" Color="{StaticResource LineSoft}" HorizontalOptions="Start" Margin="3,4,0,0" />
                 <c:Icon Grid.Column="1" Name="bot" Size="15" VerticalOptions="Start" Margin="0,1,0,0" />
-                <Label Grid.Column="2" Text="Agent" FontAttributes="Bold" FontSize="13" />
+                <Label Grid.Column="2" Text="Agent" FontAttributes="Bold" FontSize="13">
+                    <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding IsSub}" Value="True"><Setter Property="Text" Value="Sub-Agent" /><Setter Property="TextColor" Value="{StaticResource Cyan}" /></DataTrigger></Label.Triggers>
+                </Label>
                 <c:MarkdownView Grid.Row="1" Grid.Column="2" Text="{Binding Text}" Margin="0,6,0,0" />
             </Grid>
         </DataTemplate>
 
         <!-- ===== Flow: Tool ===== -->
         <DataTemplate x:Key="ToolTpl">
-            <Grid ColumnDefinitions="16,22,*" ColumnSpacing="6" Padding="0,2">
-                <BoxView WidthRequest="1" Color="{StaticResource LineSoft}" HorizontalOptions="Start" Margin="3,0,0,0" />
+            <Grid ColumnDefinitions="16,22,*" ColumnSpacing="6" Padding="0,2" Margin="{Binding Indent}">
+                <BoxView WidthRequest="1" Color="{StaticResource LineSoft}" HorizontalOptions="Start" Margin="3,0,0,0">
+                    <BoxView.Triggers><DataTrigger TargetType="BoxView" Binding="{Binding IsSub}" Value="True"><Setter Property="Color" Value="{StaticResource Cyan}" /></DataTrigger></BoxView.Triggers>
+                </BoxView>
                 <c:Icon Grid.Column="1" Name="{Binding ToolGlyph}" Size="14" Color="{StaticResource Muted}" VerticalOptions="Start" Margin="0,2,0,0" />
                 <VerticalStackLayout Grid.Column="2" Spacing="6">
                     <VerticalStackLayout.GestureRecognizers>
                         <TapGestureRecognizer Command="{Binding ToggleCommand}" />
                     </VerticalStackLayout.GestureRecognizers>
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
                         <Label Text="{Binding ToolVerb}" FontSize="12.5" TextColor="{StaticResource Text2}" VerticalOptions="Center" />
                         <Label Grid.Column="1" Text="{Binding ToolSummary}" Style="{StaticResource MonoLabel}" FontSize="11" TextColor="{StaticResource Muted}" LineBreakMode="TailTruncation" VerticalOptions="Center" />
-                        <Grid Grid.Column="2" WidthRequest="16" HeightRequest="16">
+                        <Label Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource MonoLabel}" FontSize="10" TextColor="{StaticResource Muted}" VerticalOptions="Center" />
+                        <Grid Grid.Column="3" WidthRequest="16" HeightRequest="16">
                             <c:AiOrb IsActive="True" WidthRequest="12" HeightRequest="12" IsVisible="{Binding IsDone, Converter={StaticResource Not}}" />
                             <c:Icon Name="check" Size="13" Color="{StaticResource Green}" IsVisible="{Binding IsDone}" />
                             <c:Icon Name="x" Size="13" Color="{StaticResource Red}" IsVisible="{Binding IsError}" />
@@ -194,6 +199,18 @@
                     <c:RingView WidthRequest="18" HeightRequest="18" Progress="{Binding Host.ContextFraction}" Color="{Binding Host.ContextColor}" Thickness="2.5" />
                     <Label Text="{Binding Host.ContextText, FallbackValue='0 / 200k'}" Style="{StaticResource MonoLabel}" FontSize="10.5" VerticalOptions="Center" />
                     <Label Text="{Binding Host.CostText}" Style="{StaticResource MonoLabel}" FontSize="10.5" TextColor="{StaticResource Muted}" VerticalOptions="Center" />
+                    <Label Style="{StaticResource MonoLabel}" FontSize="10.5" TextColor="{StaticResource Muted}" VerticalOptions="Center" ToolTipProperties.Text="AI-Zeit (Modell) / Agent-Zeit (Wanduhr) / Tool-Zeit">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="AI " TextColor="{StaticResource Muted}" />
+                                <Span Text="{Binding Host.AiTimeText}" TextColor="{StaticResource Text2}" />
+                                <Span Text="  AGENT " TextColor="{StaticResource Muted}" />
+                                <Span Text="{Binding Host.AgentTimeText}" TextColor="{StaticResource Text2}" />
+                                <Span Text="  " />
+                                <Span Text="{Binding Host.LinesText}" TextColor="{StaticResource Green}" />
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
                 </HorizontalStackLayout>
 
                 <c:IconButton Grid.Column="5" Icon="terminal" Command="{Binding OpenTerminalCommand}" ToolTipProperties.Text="Terminal im Projekt" />

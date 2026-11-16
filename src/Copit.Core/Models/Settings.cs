@@ -23,7 +23,17 @@ public class AppSettings
     public GitLabSettings GitLab { get; set; } = new();
     public AiSettings Ai { get; set; } = new();
     public TimeSettings Time { get; set; } = new();
+    public UpdateSettings Update { get; set; } = new();
     public bool OnboardingDone { get; set; }
+}
+
+public class UpdateSettings
+{
+    /// <summary>GitHub-Repository (owner/name) mit den Copit-Releases.</summary>
+    public string Repo { get; set; } = "Copit-Code/Copit";
+    /// <summary>Beim Start und alle paar Stunden nach neuen Releases suchen.</summary>
+    public bool Auto { get; set; } = true;
+    public string? SkippedVersion { get; set; }
 }
 
 public class JiraSettings
@@ -61,6 +71,10 @@ public class AiSettings
     public string CopilotExtraArgs { get; set; } = "";
     /// <summary>Wird jeder Session als zusätzliche System-Anweisung mitgegeben.</summary>
     public string GlobalInstructions { get; set; } = "Antworte auf Deutsch. Halte Antworten kompakt.";
+    /// <summary>Neue Agents mit Branch arbeiten in einem eigenen git worktree.</summary>
+    public bool UseWorktrees { get; set; } = true;
+    /// <summary>Copit-Regeln und Claude-settings.json als --allowedTools/--disallowedTools mitgeben.</summary>
+    public bool ApplyPermissionRules { get; set; } = true;
 }
 
 public class TimeSettings
@@ -71,6 +85,9 @@ public class TimeSettings
     public string DayStart { get; set; } = "08:00";
     /// <summary>Rundung der Vorschläge in Minuten.</summary>
     public int RoundingMinutes { get; set; } = 15;
+    /// <summary>Buchen nach Personen-Aufwand: was eine Person ohne KI gebraucht hätte, mal Faktor (etwas weniger).</summary>
+    public bool HumanEffort { get; set; } = true;
+    public double EffortFactor { get; set; } = 0.85;
     public List<RuleSet> RuleSets { get; set; } =
     [
         new() { Name = "Buchungstexte", Text = "Buchungstexte sind kurz, fachlich und im Präteritum, z.B. 'Login-Fehler im Token-Refresh analysiert und behoben'. Keine Ticketnummern im Text.", Enabled = true },

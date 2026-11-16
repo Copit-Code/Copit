@@ -7,6 +7,7 @@ public class ProjectsData { public List<CopitProject> Projects { get; set; } = [
 public class NotesData { public List<ProjectNote> Notes { get; set; } = []; }
 public class DaysData { public Dictionary<string, DayEntry> Days { get; set; } = []; }
 public class AutomationsData { public List<Automation> Automations { get; set; } = []; public List<AutomationRun> Runs { get; set; } = []; public bool Seeded { get; set; } }
+public class BudgetsData { public List<Budget> Budgets { get; set; } = []; }
 public class PromptsData { public List<PromptSnippet> Snippets { get; set; } = []; public bool Seeded { get; set; } }
 public class PromptSnippet { public string Id { get; set; } = Guid.NewGuid().ToString("N"); public string Title { get; set; } = ""; public string Text { get; set; } = ""; }
 
@@ -19,6 +20,9 @@ public class DataService
     public JsonStore<AccountMemory> Accounts { get; } = new(AppPaths.File("accounts.json"));
     public JsonStore<AutomationsData> Automations { get; } = new(AppPaths.File("automations.json"));
     public JsonStore<PromptsData> Prompts { get; } = new(AppPaths.File("prompts.json"));
+    public JsonStore<TimeMemory> TimeMemory { get; } = new(AppPaths.File("time-memory.json"));
+    public JsonStore<BudgetsData> Budgets { get; } = new(AppPaths.File("budgets.json"));
+    public JsonStore<BookingSources> Sources { get; } = new(AppPaths.File("time-sources.json"));
 
     public event Action? ProjectsChanged;
     public void RaiseProjectsChanged() => ProjectsChanged?.Invoke();
@@ -54,17 +58,6 @@ public class DataService
             ]);
             Prompts.Value.Seeded = true;
             Prompts.Save();
-        }
-        if (!Automations.Value.Seeded)
-        {
-            Automations.Value.Automations.AddRange(
-            [
-                new() { Name = "Feierabend-Check: Stunden gebucht?", Kind = AutomationKind.BookingCheck, TimeOfDay = "16:30" },
-                new() { Name = "Pipeline-Wächter (alle Projekte)", Kind = AutomationKind.PipelineWatch, IntervalMinutes = 3 },
-                new() { Name = "Daily-Standup vorbereiten", Kind = AutomationKind.DailyStandup, TimeOfDay = "09:15", Enabled = false },
-            ]);
-            Automations.Value.Seeded = true;
-            Automations.Save();
         }
     }
 }

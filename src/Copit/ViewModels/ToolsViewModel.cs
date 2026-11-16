@@ -7,34 +7,6 @@ using Copit.Services;
 
 namespace Copit.ViewModels;
 
-public partial class AutomationItem : ObservableObject
-{
-    public Automation Model { get; }
-    public AutomationItem(Automation m) => Model = m;
-    public string Name => Model.Name;
-    public string KindText => Model.Kind switch
-    {
-        AutomationKind.Reminder => "Erinnerung",
-        AutomationKind.BookingCheck => "Buchungs-Check",
-        AutomationKind.AiPrompt => "KI-Prompt",
-        AutomationKind.PipelineWatch => "Pipeline-Wächter",
-        AutomationKind.DailyStandup => "Standup",
-        _ => Model.Kind.ToString()
-    };
-    public string Schedule => Model.Kind == AutomationKind.PipelineWatch
-        ? $"alle {Model.IntervalMinutes} min"
-        : $"{Model.TimeOfDay} · {string.Join(" ", Model.Days.Select(d => d.ToString()[..2]))}";
-    public string LastRunText => Model.LastRun == null ? "noch nie" : $"zuletzt {Model.LastRun:dd.MM. HH:mm}";
-    public bool Enabled
-    {
-        get => Model.Enabled;
-        set { if (Model.Enabled != value) { Model.Enabled = value; OnPropertyChanged(); EnabledChanged?.Invoke(); } }
-    }
-    public event Action? EnabledChanged;
-    [ObservableProperty] public partial bool Running { get; set; }
-    public void Refresh() { OnPropertyChanged(nameof(LastRunText)); OnPropertyChanged(nameof(Schedule)); OnPropertyChanged(nameof(Name)); OnPropertyChanged(nameof(KindText)); }
-}
-
 public partial class ToolsViewModel : ObservableObject, IActivatable
 {
     private readonly DataService _data;
@@ -43,19 +15,16 @@ public partial class ToolsViewModel : ObservableObject, IActivatable
     private readonly GitService _git;
     private readonly TimeBookingService _time;
     private readonly SessionStore _sessions;
-    private readonly AutomationService _automations;
     private readonly SettingsService _settings;
+    private readonly ActivityService _activity;
     private readonly ToastService _toast;
     private readonly NavigationService _nav;
 
     public ObservableCollection<GitLabMergeRequest> MergeRequests { get; } = [];
     public ObservableCollection<CopitProject> Projects { get; } = [];
     public ObservableCollection<ReviewFinding> Findings { get; } = [];
-    public ObservableCollection<AutomationItem> Automations { get; } = [];
-    public ObservableCollection<AutomationRun> Runs { get; } = [];
     public ObservableCollection<PromptSnippet> Snippets { get; } = [];
     public ObservableCollection<string> Tags { get; } = [];
-    public string[] Kinds { get; } = ["Erinnerung", "Buchungs-Check", "KI-Prompt", "Pipeline-Wächter", "Standup"];
 
     [ObservableProperty] public partial string Tab { get; set; } = "review";
     [ObservableProperty] public partial AiProvider Provider { get; set; }
@@ -77,57 +46,36 @@ public partial class ToolsViewModel : ObservableObject, IActivatable
     [ObservableProperty] public partial string ChangelogFrom { get; set; } = "";
     [ObservableProperty] public partial string ChangelogText { get; set; } = "";
     [ObservableProperty] public partial bool ChangelogBusy { get; set; }
-    // Automation-Editor
-    [ObservableProperty] public partial bool ShowEditor { get; set; }
-    [ObservableProperty] public partial Automation? Editing { get; set; }
-    [ObservableProperty] public partial string EdName { get; set; } = "";
-    [ObservableProperty] public partial string EdKind { get; set; } = "Erinnerung";
-    [ObservableProperty] public partial string EdTime { get; set; } = "16:30";
-    [ObservableProperty] public partial string EdInterval { get; set; } = "5";
-    [ObservableProperty] public partial string EdPrompt { get; set; } = "";
-    [ObservableProperty] public partial CopitProject? EdProject { get; set; }
-    [ObservableProperty] public partial AutomationRun? SelectedRun { get; set; }
 
     public bool IsReview => Tab == "review";
     public bool IsStandup => Tab == "standup";
-    public bool IsAutomations => Tab == "automations";
     public bool IsChangelog => Tab == "changelog";
     public bool IsPrompts => Tab == "prompts";
     public bool IsClaude => Provider == AiProvider.Claude;
     public bool IsCopilot => Provider == AiProvider.Copilot;
     public bool CanPost => SelectedMr != null && HasReview;
-    public bool EdIsWatch => EdKind == "Pipeline-Wächter";
-    public bool EdNeedsPrompt => EdKind is "Erinnerung" or "KI-Prompt";
 
     public ToolsViewModel(DataService data, ConnectionHub hub, AssistService assist, GitService git, TimeBookingService time,
-        SessionStore sessions, AutomationService automations, SettingsService settings, ToastService toast, NavigationService nav)
+        SessionStore sessions, SettingsService settings, ToastService toast, NavigationService nav, ActivityService activity)
     {
         _data = data; _hub = hub; _assist = assist; _git = git; _time = time; _sessions = sessions;
-        _automations = automations; _settings = settings; _toast = toast; _nav = nav;
+        _settings = settings; _activity = activity; _toast = toast; _nav = nav;
         Provider = settings.Settings.Ai.DefaultProvider;
-        automations.RunsChanged += () => MainThread.BeginInvokeOnMainThread(() =>
-        {
-            foreach (var a in Automations) { a.Running = automations.IsRunning(a.Model.Id); a.Refresh(); }
-            LoadRuns();
-        });
     }
 
     partial void OnTabChanged(string value)
     {
-        foreach (var p in new[] { nameof(IsReview), nameof(IsStandup), nameof(IsAutomations), nameof(IsChangelog), nameof(IsPrompts) }) OnPropertyChanged(p);
+        foreach (var p in new[] { nameof(IsReview), nameof(IsStandup), nameof(IsChangelog), nameof(IsPrompts) }) OnPropertyChanged(p);
     }
     partial void OnProviderChanged(AiProvider value) { OnPropertyChanged(nameof(IsClaude)); OnPropertyChanged(nameof(IsCopilot)); }
     partial void OnSelectedMrChanged(GitLabMergeRequest? value) => OnPropertyChanged(nameof(CanPost));
     partial void OnHasReviewChanged(bool value) => OnPropertyChanged(nameof(CanPost));
-    partial void OnEdKindChanged(string value) { OnPropertyChanged(nameof(EdIsWatch)); OnPropertyChanged(nameof(EdNeedsPrompt)); }
     partial void OnChangelogProjectChanged(CopitProject? value) => _ = LoadTagsAsync();
 
     public void OnActivated(object? parameter)
     {
         Projects.Clear();
         foreach (var p in _data.Projects.Value.Projects) Projects.Add(p);
-        LoadAutomations();
-        LoadRuns();
         Snippets.Clear();
         foreach (var s in _data.Prompts.Value.Snippets) Snippets.Add(s);
 
@@ -253,12 +201,19 @@ public partial class ToolsViewModel : ObservableObject, IActivatable
         {
             var y = DateOnly.FromDateTime(DateTime.Today.AddDays(-1));
             while (!_time.IsWorkDay(y)) y = y.AddDays(-1);
-            var ctx = await _time.GatherAsync(y, _time.TargetFor(y), _sessions.DescribeDay(y, _data), _ => { });
+            var ctx = await _time.GatherAsync(y, _time.TargetFor(y), Sessions(y), _ => { });
             var inProgress = _hub.Jira != null ? await _hub.Jira.SearchAsync("assignee = currentUser() AND statusCategory = \"In Progress\"", 20) : [];
             StandupText = await _assist.StandupAsync(ctx, inProgress, Provider, _ => { });
         }
         catch (Exception e) { _toast.Error(e, "Standup"); }
         finally { StandupBusy = false; }
+    }
+
+    private IEnumerable<DaySession> Sessions(DateOnly day)
+    {
+        var from = day.ToDateTime(TimeOnly.MinValue);
+        return _activity.Build(from, from.AddDays(1), _sessions.All, id => _data.Project(id)?.SourceFolder)
+            .Select(a => new DaySession(a.Title, a.Project, a.Branch, a.Ticket, (int)ActivityService.Union(a.Segments).TotalMinutes));
     }
 
     [RelayCommand]
@@ -289,100 +244,6 @@ public partial class ToolsViewModel : ObservableObject, IActivatable
         try { ChangelogText = await _assist.ChangelogAsync(ChangelogProject.SourceFolder, ChangelogFrom, Provider, _ => { }); }
         catch (Exception e) { _toast.Error(e, "Release Notes"); }
         finally { ChangelogBusy = false; }
-    }
-
-    // ---------------- Automationen ----------------
-    private void LoadAutomations()
-    {
-        Automations.Clear();
-        foreach (var a in _data.Automations.Value.Automations)
-        {
-            var item = new AutomationItem(a) { Running = _automations.IsRunning(a.Id) };
-            item.EnabledChanged += () => _ = _data.Automations.SaveAsync();
-            Automations.Add(item);
-        }
-    }
-
-    private void LoadRuns()
-    {
-        Runs.Clear();
-        foreach (var r in _data.Automations.Value.Runs.Take(40)) Runs.Add(r);
-    }
-
-    [RelayCommand]
-    private async Task RunNowAsync(AutomationItem a)
-    {
-        a.Running = true;
-        await _automations.RunAsync(a.Model);
-        a.Running = false;
-        a.Refresh();
-        SelectedRun = _data.Automations.Value.Runs.FirstOrDefault(r => r.AutomationId == a.Model.Id);
-    }
-
-    [RelayCommand] private void ShowRun(AutomationRun r) => SelectedRun = r;
-    [RelayCommand] private void CloseRun() => SelectedRun = null;
-
-    private static AutomationKind KindFrom(string s) => s switch
-    {
-        "Buchungs-Check" => AutomationKind.BookingCheck,
-        "KI-Prompt" => AutomationKind.AiPrompt,
-        "Pipeline-Wächter" => AutomationKind.PipelineWatch,
-        "Standup" => AutomationKind.DailyStandup,
-        _ => AutomationKind.Reminder
-    };
-
-    private static string KindName(AutomationKind k) => k switch
-    {
-        AutomationKind.BookingCheck => "Buchungs-Check",
-        AutomationKind.AiPrompt => "KI-Prompt",
-        AutomationKind.PipelineWatch => "Pipeline-Wächter",
-        AutomationKind.DailyStandup => "Standup",
-        _ => "Erinnerung"
-    };
-
-    [RelayCommand]
-    private void NewAutomation()
-    {
-        Editing = null;
-        EdName = ""; EdKind = "KI-Prompt"; EdTime = "08:30"; EdInterval = "5"; EdPrompt = ""; EdProject = Projects.FirstOrDefault();
-        ShowEditor = true;
-    }
-
-    [RelayCommand]
-    private void EditAutomation(AutomationItem a)
-    {
-        Editing = a.Model;
-        EdName = a.Model.Name; EdKind = KindName(a.Model.Kind); EdTime = a.Model.TimeOfDay; EdInterval = a.Model.IntervalMinutes.ToString();
-        EdPrompt = a.Model.Prompt; EdProject = _data.Project(a.Model.ProjectId);
-        ShowEditor = true;
-    }
-
-    [RelayCommand] private void PickKind(string k) => EdKind = k;
-    [RelayCommand] private void PickEdProject(CopitProject p) => EdProject = p;
-    [RelayCommand] private void CloseEditor() => ShowEditor = false;
-
-    [RelayCommand]
-    private async Task SaveAutomationAsync()
-    {
-        if (string.IsNullOrWhiteSpace(EdName)) { _toast.Show("Name fehlt", "", NoticeLevel.Warning); return; }
-        var a = Editing ?? new Automation();
-        a.Name = EdName.Trim(); a.Kind = KindFrom(EdKind); a.TimeOfDay = EdTime.Trim();
-        a.IntervalMinutes = int.TryParse(EdInterval, out var i) ? Math.Max(1, i) : 5;
-        a.Prompt = EdPrompt; a.ProjectId = EdProject?.Id; a.Provider = Provider;
-        if (Editing == null) _data.Automations.Value.Automations.Add(a);
-        await _data.Automations.SaveAsync();
-        ShowEditor = false;
-        LoadAutomations();
-        _toast.Success("Automation gespeichert", a.Name);
-    }
-
-    [RelayCommand]
-    private async Task DeleteAutomationAsync(AutomationItem a)
-    {
-        if (!await Dialogs.Confirm("Automation löschen?", a.Name, "Löschen")) return;
-        _data.Automations.Value.Automations.Remove(a.Model);
-        await _data.Automations.SaveAsync();
-        LoadAutomations();
     }
 
     // ---------------- Prompt-Bibliothek ----------------

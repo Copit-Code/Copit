@@ -53,6 +53,18 @@ public partial class SuggestionVM : ObservableObject
 
     public string IssueKey => Model.IssueKey;
     public string IssueSummary => Model.IssueSummary;
+    public bool NeedsTicket => string.IsNullOrWhiteSpace(Model.IssueKey);
+    public bool HasTicket => !NeedsTicket;
+    public string Topic => Model.Topic ?? "";
+    public bool HasTopic => !string.IsNullOrWhiteSpace(Model.Topic) || !string.IsNullOrWhiteSpace(Model.Repo);
+    public string TopicText => string.Join(" · ", new[] { Model.Topic, Model.Repo }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    [ObservableProperty] public partial string TicketInput { get; set; } = "";
+    public void RefreshTicket()
+    {
+        foreach (var n in new[] { nameof(IssueKey), nameof(IssueSummary), nameof(NeedsTicket), nameof(HasTicket) })
+            OnPropertyChanged(n);
+        RefreshAccount();
+    }
     public string Reason => Model.Reason;
     public double Confidence => Model.Confidence;
     public string ConfidenceText => $"{Model.Confidence * 100:0}%";
@@ -75,15 +87,32 @@ public partial class SuggestionVM : ObservableObject
     public string? Account
     {
         get => Model.Account;
-        set { Model.Account = value; OnPropertyChanged(); OnPropertyChanged(nameof(NeedsAccount)); OnPropertyChanged(nameof(AccountText)); }
+        set { Model.Account = value; Model.AccountFromIssue = false; RefreshAccount(); }
     }
     public bool AccountFromMemory => Model.AccountFromMemory;
-    public bool NeedsAccount => _accountRequired && string.IsNullOrWhiteSpace(Model.Account);
-    public bool ShowAccount => _accountRequired;
-    public string AccountText => string.IsNullOrWhiteSpace(Model.Account) ? "Account fehlt" : Model.Account + (Model.AccountFromMemory ? " · gemerkt" : "");
+    public bool NeedsAccount => _accountRequired && HasTicket && string.IsNullOrWhiteSpace(Model.Account);
+    public bool HasAccount => !string.IsNullOrWhiteSpace(Model.Account);
+    public bool ShowAccount => (_accountRequired || HasAccount) && HasTicket;
+    public string AccountText => Model.Booked && !string.IsNullOrWhiteSpace(Model.BookedAccount) ? $"ACCOUNT {Model.BookedAccount} · GEBUCHT"
+        : string.IsNullOrWhiteSpace(Model.Account) ? "KEIN ACCOUNT – TIPPEN ZUM HINTERLEGEN"
+        : $"ACCOUNT {Model.Account} · {(Model.AccountFromIssue ? "AUS TICKET" : Model.AccountFromMemory ? "GEMERKT" : "MANUELL")}";
+    public string HumanText => Model.HumanHours > 0 ? $"Person ohne KI ≈ {Model.HumanHours:0.##} h" : "";
+    public bool HasHuman => Model.HumanHours > 0;
+    public void RefreshAccount() { foreach (var n in new[] { nameof(Account), nameof(AccountText), nameof(NeedsAccount), nameof(HasAccount), nameof(ShowAccount) }) OnPropertyChanged(n); }
 
     [ObservableProperty] public partial bool Booked { get; set; }
     [ObservableProperty] public partial string Error { get; set; } = "";
+}
+
+public partial class TimeQuestionVM : ObservableObject
+{
+    public TimeQuestion Model { get; }
+    public TimeQuestionVM(TimeQuestion q) { Model = q; Answer = q.Answer ?? ""; }
+    public string Question => Model.Question;
+    public List<string> Options => Model.Options;
+    [ObservableProperty] public partial string Answer { get; set; }
+    public bool Answered => !string.IsNullOrEmpty(Model.Answer);
+    public void Refresh() => OnPropertyChanged(nameof(Answered));
 }
 
 public partial class TimeViewModel : ObservableObject, IActivatable
@@ -95,6 +124,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     private readonly ToastService _toast;
     private readonly SessionStore _sessions;
     private readonly ShellViewModel _shell;
+    private readonly ActivityService _activity;
     private CancellationTokenSource? _cts;
     private DayContext? _ctx;
     private TaskCompletionSource<string?>? _accountTcs;
@@ -106,6 +136,35 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     public ObservableCollection<SuggestionVM> Suggestions { get; } = [];
     public ObservableCollection<RuleSet> Rules { get; } = [];
     public ObservableCollection<string> AccountOptions { get; } = [];
+    public ObservableCollection<TimeQuestionVM> Questions { get; } = [];
+    public ObservableCollection<TopicMapping> Topics { get; } = [];
+    public ObservableCollection<TimeFact> Facts { get; } = [];
+    public bool HasQuestions => Questions.Any(q => !q.Answered);
+    public bool HasUnassigned => Suggestions.Any(s => s.NeedsTicket && !s.Booked);
+
+    // Quellen der Analyse
+    public bool SrcTickets { get => _data.Sources.Value.Tickets; set { _data.Sources.Value.Tickets = value; SourcesChanged(); } }
+    public bool SrcCommits { get => _data.Sources.Value.Commits; set { _data.Sources.Value.Commits = value; SourcesChanged(); } }
+    public bool SrcGitLab { get => _data.Sources.Value.GitLab; set { _data.Sources.Value.GitLab = value; SourcesChanged(); } }
+    public bool SrcSessions { get => _data.Sources.Value.Sessions; set { _data.Sources.Value.Sessions = value; SourcesChanged(); } }
+    public bool SrcNote { get => _data.Sources.Value.Note; set { _data.Sources.Value.Note = value; SourcesChanged(); } }
+    private void SourcesChanged()
+    {
+        foreach (var n in new[] { nameof(SrcTickets), nameof(SrcCommits), nameof(SrcGitLab), nameof(SrcSessions), nameof(SrcNote) }) OnPropertyChanged(n);
+        _ = _data.Sources.SaveAsync();
+    }
+    [RelayCommand]
+    private void ToggleSource(string key)
+    {
+        switch (key)
+        {
+            case "tickets": SrcTickets = !SrcTickets; break;
+            case "commits": SrcCommits = !SrcCommits; break;
+            case "gitlab": SrcGitLab = !SrcGitLab; break;
+            case "sessions": SrcSessions = !SrcSessions; break;
+            case "note": SrcNote = !SrcNote; break;
+        }
+    }
     public string[] WeekDays { get; } = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
     [ObservableProperty, NotifyPropertyChangedFor(nameof(MonthTitle))] public partial DateOnly Month { get; set; }
@@ -131,6 +190,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     [ObservableProperty] public partial SuggestionVM? AccountFor { get; set; }
     [ObservableProperty] public partial string AccountInput { get; set; } = "";
     [ObservableProperty] public partial bool RememberForProject { get; set; } = true;
+    [ObservableProperty] public partial string AccountDialogTitle { get; set; } = "Account";
 
     public string MonthTitle => Month.ToString("MMMM yyyy", De);
     public string SelectedTitle => Selected?.Date.ToString("dddd, d. MMMM", De) ?? "";
@@ -144,13 +204,14 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     public event Action? Celebrate;
 
     public TimeViewModel(TimeBookingService time, DataService data, SettingsService settings, ConnectionHub hub,
-        ToastService toast, SessionStore sessions, ShellViewModel shell)
+        ToastService toast, SessionStore sessions, ShellViewModel shell, ActivityService activity)
     {
-        _time = time; _data = data; _settings = settings; _hub = hub; _toast = toast; _sessions = sessions; _shell = shell;
+        _time = time; _data = data; _settings = settings; _hub = hub; _toast = toast; _sessions = sessions; _shell = shell; _activity = activity;
+        Questions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasQuestions));
         Provider = settings.Settings.Ai.DefaultProvider;
         var today = DateOnly.FromDateTime(DateTime.Today);
         Month = new DateOnly(today.Year, today.Month, 1);
-        Suggestions.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(HasSuggestions)); OnPropertyChanged(nameof(CanBook)); UpdateTotal(); };
+        Suggestions.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(HasSuggestions)); OnPropertyChanged(nameof(CanBook)); OnPropertyChanged(nameof(HasUnassigned)); UpdateTotal(); };
     }
 
     partial void OnProviderChanged(AiProvider value) { OnPropertyChanged(nameof(IsClaude)); OnPropertyChanged(nameof(IsCopilot)); }
@@ -187,6 +248,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         MinHours = _settings.Settings.Time.MinHoursPerDay.ToString("0.##", De);
         Rules.Clear();
         foreach (var r in _settings.Settings.Time.RuleSets) Rules.Add(r);
+        LoadMemory();
         if (parameter is DateOnly d)
         {
             Month = new DateOnly(d.Year, d.Month, 1);
@@ -270,6 +332,8 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         Summary = entry?.LastSummary ?? "";
         Suggestions.Clear();
         foreach (var s in entry?.LastSuggestions ?? []) AddSuggestionVm(s);
+        Questions.Clear();
+        foreach (var q in entry?.Questions ?? []) Questions.Add(new TimeQuestionVM(q));
         _ = LoadWorklogsAsync(cell.Date);
     }
 
@@ -298,8 +362,16 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     {
         var total = Suggestions.Where(s => !s.Booked).Sum(s => s.Model.Hours);
         var want = ParseHours(HoursToBook) ?? 0;
-        TotalText = $"{total:0.##}h verteilt" + (want > 0 ? $" · Ziel {want:0.##}h" : "");
-        TotalOk = want <= 0 || Math.Abs(total - want) < 0.01;
+        if (_settings.Settings.Time.HumanEffort)
+        {
+            TotalText = $"{total:0.##}h Personen-Aufwand" + (want > 0 ? $" · max. {want:0.##}h" : "");
+            TotalOk = want <= 0 || total <= want + 0.01;
+        }
+        else
+        {
+            TotalText = $"{total:0.##}h verteilt" + (want > 0 ? $" · Ziel {want:0.##}h" : "");
+            TotalOk = want <= 0 || Math.Abs(total - want) < 0.01;
+        }
         OnPropertyChanged(nameof(CanBook));
     }
 
@@ -339,6 +411,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         IsWorking = true;
         Steps.Clear();
         Suggestions.Clear();
+        Questions.Clear();
         Summary = "";
         _cts = new CancellationTokenSource();
         var day = Selected.Date;
@@ -351,7 +424,11 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         });
         try
         {
-            _ctx = await _time.GatherAsync(day, 0, _sessions.DescribeDay(day, _data), Progress, _cts.Token);
+            var from = day.ToDateTime(TimeOnly.MinValue);
+            var daySessions = await Task.Run(() => _activity.Build(from, from.AddDays(1), _sessions.All, id => _data.Project(id)?.SourceFolder)
+                .Select(a => new DaySession(a.Title, a.Project, a.Branch, a.Ticket, (int)ActivityService.Union(a.Segments).TotalMinutes)).ToList());
+            if (_data.Sources.Value.Sessions && daySessions.Count > 0) Progress($"KI-Sessions · {daySessions.Count} Sessions, {daySessions.Sum(x => x.Minutes)} min aktiv");
+            _ctx = await _time.GatherAsync(day, 0, daySessions, Progress, _cts.Token, _data.Sources.Value);
             _ctx.TargetHours = _ctx.BookedHours + hours.Value;
             foreach (var w in _ctx.Warnings) Progress("Hinweis: " + w);
 
@@ -377,10 +454,12 @@ public partial class TimeViewModel : ObservableObject, IActivatable
 
             Summary = plan.Summary;
             foreach (var b in plan.Bookings) AddSuggestionVm(b);
+            foreach (var q in plan.Questions) Questions.Add(new TimeQuestionVM(q));
             if (plan.Bookings.Count == 0 && string.IsNullOrEmpty(Summary)) Summary = "Keine passenden Tickets gefunden. Trage eine Notiz zum Tag ein und versuche es erneut.";
             var entry = _data.Day(day);
             entry.LastSuggestions = plan.Bookings;
             entry.LastSummary = plan.Summary;
+            entry.Questions = plan.Questions;
             await _data.Days.SaveAsync();
             Selected.HasDraft = plan.Bookings.Count > 0;
         }
@@ -432,7 +511,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         {
             try
             {
-                foreach (var a in (await _hub.Jira.GetTempoAccountsAsync()).Take(40))
+                foreach (var a in (await _hub.Jira.GetTempoAccountsAsync()).Take(80))
                     if (!AccountOptions.Contains(a.Key)) AccountOptions.Add(a.Key);
             }
             catch { }
@@ -440,13 +519,17 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         AccountFor = s;
         AccountInput = s.Account ?? "";
         ShowAccountDialog = true;
+        AccountDialogTitle = s.HasTicket ? $"Account für {s.IssueKey}" : "Account für den neuen Task";
         _accountTcs = new TaskCompletionSource<string?>();
         var result = await _accountTcs.Task;
         ShowAccountDialog = false;
         if (!string.IsNullOrWhiteSpace(result))
         {
-            await _time.RememberAccountAsync(s.IssueKey, result.Trim(), RememberForProject);
-            s.Model.AccountFromMemory = true;
+            if (s.HasTicket)
+            {
+                await _time.RememberAccountAsync(s.IssueKey, result.Trim(), RememberForProject);
+                s.Model.AccountFromMemory = true;
+            }
         }
         return result?.Trim();
     }
@@ -459,7 +542,9 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     private async Task BookAsync()
     {
         if (Selected == null || _ctx == null && _hub.Jira == null) return;
-        var open = Suggestions.Where(s => !s.Booked && s.Model.Hours > 0).ToList();
+        var unassigned = Suggestions.Where(s => !s.Booked && s.NeedsTicket && s.Model.Hours > 0).ToList();
+        if (unassigned.Count > 0 && !await Dialogs.Confirm("Blöcke ohne Ticket", $"{unassigned.Count} Block/Blöcke ({unassigned.Sum(u => u.Model.Hours):0.##}h) haben noch kein Ticket und werden nicht gebucht. Trotzdem fortfahren?", "Weiter")) return;
+        var open = Suggestions.Where(s => !s.Booked && s.HasTicket && s.Model.Hours > 0).ToList();
         if (open.Count == 0) return;
 
         // Fehlende Accounts erfragen – Antworten werden gemerkt
@@ -486,6 +571,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
                 var vm = Suggestions.First(s => s.Model == item);
                 vm.Booked = err == null;
                 vm.Error = err ?? "";
+                vm.RefreshAccount();
             }
             await _data.Days.SaveAsync();
             var ok = results.Count(r => r.Error == null);
@@ -501,6 +587,142 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         }
         catch (Exception e) { _toast.Error(e, "Buchung fehlgeschlagen"); }
         finally { IsBooking = false; }
+    }
+
+    // --------------- Ticket zuordnen / Rückfragen / Gedächtnis ---------------
+    [RelayCommand]
+    private async Task AssignTicketAsync(SuggestionVM s)
+    {
+        var key = (s.TicketInput ?? "").Trim().ToUpperInvariant();
+        if (!TimeBookingService.IssueKeyRegex().IsMatch(key)) { _toast.Show("Ungültiger Ticket-Key", key, NoticeLevel.Warning); return; }
+        await _time.CorrectTicketAsync(s.Model, key);
+        if (_hub.Jira != null)
+        {
+            try
+            {
+                var issue = await _hub.Jira.GetIssueAsync(key);
+                if (issue != null) { s.Model.IssueSummary = issue.Summary; await _time.ResolveAccountsAsync([s.Model], [issue], _ => { }); }
+            }
+            catch { }
+        }
+        s.TicketInput = "";
+        s.RefreshTicket();
+        OnPropertyChanged(nameof(HasUnassigned)); OnPropertyChanged(nameof(CanBook));
+        await _data.Days.SaveAsync();
+        LoadMemory();
+        if (s.HasTopic) _toast.Success("Zuordnung gemerkt", $"{s.TopicText} → {key}");
+    }
+
+    /// <summary>Für einen Block ohne Ticket im Epic einen Task anlegen – mit dem Account des Epics.</summary>
+    [RelayCommand]
+    private async Task CreateTaskAsync(SuggestionVM s)
+    {
+        if (_hub.Jira == null) { _toast.Show("Jira nicht konfiguriert", "", NoticeLevel.Warning); return; }
+        var guess = _data.Projects.Value.Projects.FirstOrDefault(p => !string.IsNullOrEmpty(s.Model.Repo) && !string.IsNullOrEmpty(p.EpicKey)
+                        && (p.SourceFolder.Contains(s.Model.Repo!, StringComparison.OrdinalIgnoreCase) || s.Model.Repo!.Contains(System.IO.Path.GetFileName(p.SourceFolder.TrimEnd('\\')), StringComparison.OrdinalIgnoreCase)))?.EpicKey
+                    ?? _data.Projects.Value.Projects.FirstOrDefault(p => !string.IsNullOrEmpty(p.EpicKey))?.EpicKey ?? "";
+        var epic = await Dialogs.Prompt("Task im Epic anlegen", "Epic-Key (z. B. WEI-1 für das Weiterentwicklungsprojekt)", guess);
+        if (string.IsNullOrWhiteSpace(epic)) return;
+        epic = epic.Trim().ToUpperInvariant();
+        var defaultTitle = !string.IsNullOrWhiteSpace(s.Model.Topic) ? s.Model.Topic! : s.Comment.Split('\n')[0];
+        var title = await Dialogs.Prompt("Task im Epic anlegen", $"Titel des Tasks in {epic}", defaultTitle.Length > 120 ? defaultTitle[..120] : defaultTitle);
+        if (string.IsNullOrWhiteSpace(title)) return;
+        var (account, source) = await _time.EpicAccountAsync(epic);
+        if (account == null && _time.AccountRequired)
+        {
+            account = await AskAccountAsync(s);
+            if (account == null) { _toast.Show("Abgebrochen", "Ohne Account wird kein Task angelegt.", NoticeLevel.Warning); return; }
+            await _time.RememberAccountAsync(epic, account, RememberForProject);
+            source = "gewählt";
+        }
+        if (!await Dialogs.Confirm("Task anlegen?", $"Task \"{title}\" im Epic {epic}{(account != null ? $"\nAccount: {account} ({source})" : "\nohne Account")}\nGeschätzt: {s.Model.Hours:0.##} h", "Anlegen")) return;
+        try
+        {
+            var issue = await _time.CreateTaskInEpicAsync(epic, title, s.Comment, s.Model.Hours, account);
+            await _time.CorrectTicketAsync(s.Model, issue.Key);
+            s.Model.IssueSummary = issue.Summary;
+            s.Model.Account = issue.Account ?? account;
+            s.Model.AccountFromIssue = issue.Account != null;
+            s.RefreshTicket();
+            OnPropertyChanged(nameof(HasUnassigned)); OnPropertyChanged(nameof(CanBook));
+            await _data.Days.SaveAsync();
+            LoadMemory();
+            _toast.Success($"{issue.Key} angelegt", $"Task in {epic}{(issue.Account != null ? $" · Account {issue.Account}" : "")}");
+        }
+        catch (Exception e) { _toast.Error(e, "Task anlegen"); }
+    }
+
+    [RelayCommand]
+    private async Task ChangeTicketAsync(SuggestionVM s)
+    {
+        var key = await Dialogs.Prompt("Ticket ändern", s.HasTopic ? $"Copit merkt sich: {s.TopicText} → neues Ticket" : "Ticket-Key", s.IssueKey);
+        if (string.IsNullOrWhiteSpace(key)) return;
+        s.TicketInput = key;
+        await AssignTicketAsync(s);
+    }
+
+    [RelayCommand]
+    private async Task AnswerQuestionAsync(object? arg)
+    {
+        if (arg is not object[] { Length: 2 } pair || pair[0] is not TimeQuestionVM q || pair[1] is not string answer) return;
+        await AnswerAsync(q, answer);
+    }
+
+    [RelayCommand] private Task AnswerTypedAsync(TimeQuestionVM q) => AnswerAsync(q, q.Answer);
+
+    private async Task AnswerAsync(TimeQuestionVM q, string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer)) return;
+        await _time.AnswerAsync(q.Model, answer.Trim());
+        q.Answer = answer.Trim();
+        q.Refresh();
+        OnPropertyChanged(nameof(HasQuestions));
+        await _data.Days.SaveAsync();
+        LoadMemory();
+        _toast.Success("Antwort gemerkt", "Gilt ab jetzt auch für künftige Tage.");
+    }
+
+    [RelayCommand]
+    private async Task ReanalyzeAsync()
+    {
+        foreach (var q in Questions.Where(q => !q.Answered && !string.IsNullOrWhiteSpace(q.Answer)).ToList()) await AnswerAsync(q, q.Answer);
+        await RunAnalysisAsync(useAi: true);
+    }
+
+    private void LoadMemory()
+    {
+        Topics.Clear();
+        foreach (var t in _data.TimeMemory.Value.Topics.OrderByDescending(t => t.Manual).ThenByDescending(t => t.Hits)) Topics.Add(t);
+        Facts.Clear();
+        foreach (var f in _data.TimeMemory.Value.Facts.AsEnumerable().Reverse()) Facts.Add(f);
+    }
+
+    [RelayCommand]
+    private async Task AddTopicAsync()
+    {
+        var topic = await Dialogs.Prompt("Zuordnung anlegen", "Thema oder Repo (z. B. \"Weiterentwicklung Shop\" oder \"ai-backend\")");
+        if (string.IsNullOrWhiteSpace(topic)) return;
+        var ticket = await Dialogs.Prompt("Zuordnung anlegen", $"Auf welches Ticket gehört \"{topic}\"?");
+        if (string.IsNullOrWhiteSpace(ticket)) return;
+        TimeBookingService.LearnTopic(_data.TimeMemory.Value.Topics, topic, null, ticket.Trim().ToUpperInvariant(), 3);
+        await _data.TimeMemory.SaveAsync();
+        LoadMemory();
+    }
+
+    [RelayCommand]
+    private async Task DeleteTopicAsync(TopicMapping t)
+    {
+        _data.TimeMemory.Value.Topics.Remove(t);
+        await _data.TimeMemory.SaveAsync();
+        LoadMemory();
+    }
+
+    [RelayCommand]
+    private async Task DeleteFactAsync(TimeFact f)
+    {
+        _data.TimeMemory.Value.Facts.Remove(f);
+        await _data.TimeMemory.SaveAsync();
+        LoadMemory();
     }
 
     // --------------- Regeln ---------------

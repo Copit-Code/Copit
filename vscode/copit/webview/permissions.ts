@@ -96,6 +96,9 @@ function integrations(s: State) {
       <label class="field"><span>Authentifizierung</span>${seg([{ value: "bearer", label: "Bearer (PAT)" }, { value: "basic", label: "Basic" }], st["jira.authMode"], "set", "jira.authMode")}</label>
       ${st["jira.authMode"] === "basic" ? field("jira.user", "Benutzer", st["jira.user"]) : ""}
       ${secretRow("jira", "Personal Access Token", s)}
+      ${field("jira.accountField", "Account-Feld (Zeitbuchung)", st["jira.accountField"], "customfield_10100", "Leer = Tickets brauchen keinen Account")}
+      <label class="field"><span>Tempo</span><div class="row"><button class="toggle ${st["jira.useTempo"] ? "on" : ""}" data-act="flip" data-arg="jira.useTempo"></button><span class="hint">Über Tempo Timesheets buchen (Account als Work-Attribut)</span></div></label>
+      ${st["jira.useTempo"] ? field("jira.tempoAttribute", "Tempo Account-Attribut", st["jira.tempoAttribute"], "_Account_") : ""}
       <div class="row"><button data-act="test" data-arg="jira">Verbindung testen</button><span class="mono small">${esc(s.tests.jira ?? "")}</span></div>
     </div>
     <div class="form card2">

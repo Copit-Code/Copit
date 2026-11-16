@@ -28,6 +28,7 @@ export class CopitDb {
     const data = fs.existsSync(file) ? fs.readFileSync(file) : undefined;
     const db = new SQL.Database(data);
     db.run(SCHEMA);
+    CopitDb.migrate(db);
     return new CopitDb(db, file);
   }
 
@@ -36,7 +37,14 @@ export class CopitDb {
     const SQL = await initSqlJs({ locateFile: (f: string) => path.join(wasmDir, f) });
     const db = new SQL.Database();
     db.run(SCHEMA);
+    CopitDb.migrate(db);
     return new CopitDb(db, "");
+  }
+
+  private static migrate(db: Database) {
+    for (const col of ["in_tok INTEGER", "out_tok INTEGER", "cache_read INTEGER", "cache_write INTEGER", "model TEXT"]) {
+      try { db.run(`ALTER TABLE runs ADD COLUMN ${col}`); } catch { /* existiert bereits */ }
+    }
   }
 
   private touch() {
@@ -117,14 +125,16 @@ export class CopitDb {
 
   // ---------- Runs ----------
   saveRun(r: Run) {
-    this.exec("INSERT OR REPLACE INTO runs (id, agent_id, started_at, ended_at, ai_ms, tool_ms, cost, turns, prompt, ok) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      [r.id, r.agentId, r.startedAt, r.endedAt ?? null, r.aiMs, r.toolMs, r.costUsd, r.turns, r.prompt, r.ok == null ? null : r.ok ? 1 : 0]);
+    this.exec("INSERT OR REPLACE INTO runs (id, agent_id, started_at, ended_at, ai_ms, tool_ms, cost, turns, prompt, ok, in_tok, out_tok, cache_read, cache_write, model) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      [r.id, r.agentId, r.startedAt, r.endedAt ?? null, r.aiMs, r.toolMs, r.costUsd, r.turns, r.prompt, r.ok == null ? null : r.ok ? 1 : 0,
+        r.inputTokens ?? null, r.outputTokens ?? null, r.cacheRead ?? null, r.cacheWrite ?? null, r.model ?? null]);
   }
 
   runs(from: number, to: number): Run[] {
     return this.all<any>("SELECT * FROM runs WHERE started_at < ? AND COALESCE(ended_at, started_at) >= ? ORDER BY started_at", [to, from]).map((r) => ({
       id: r.id, agentId: r.agent_id, startedAt: r.started_at, endedAt: r.ended_at ?? undefined, aiMs: r.ai_ms ?? 0, toolMs: r.tool_ms ?? 0,
       costUsd: r.cost ?? 0, turns: r.turns ?? 0, prompt: r.prompt ?? "", ok: r.ok == null ? undefined : !!r.ok,
+      inputTokens: r.in_tok ?? undefined, outputTokens: r.out_tok ?? undefined, cacheRead: r.cache_read ?? undefined, cacheWrite: r.cache_write ?? undefined, model: r.model ?? undefined,
     }));
   }
 

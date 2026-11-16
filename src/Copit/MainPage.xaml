@@ -11,7 +11,7 @@
         <Grid BackgroundColor="{StaticResource Bg2}" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Padding="10,12,10,8">
             <!-- Marke -->
             <HorizontalStackLayout Spacing="9" Padding="4,0,0,12">
-                <c:LogoView WidthRequest="20" HeightRequest="20" VerticalOptions="Center" />
+                <c:LogoView WidthRequest="22" HeightRequest="22" VerticalOptions="Center" Busy="{Binding AnyRunning}" />
                 <Label Text="Copit" FontAttributes="Bold" FontSize="13.5" VerticalOptions="Center" />
                 <Label Text="VIBECODE IDE" Style="{StaticResource Caption}" FontSize="9.5" VerticalOptions="Center" />
             </HorizontalStackLayout>

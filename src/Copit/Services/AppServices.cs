@@ -24,6 +24,11 @@ public static class Routes
     public const string Session = "session";
     public const string Tools = "tools";
     public const string Settings = "settings";
+    public const string Board = "board";
+    public const string Activity = "activity";
+    public const string Budgets = "budgets";
+    public const string Automations = "automations";
+    public const string Customize = "customize";
 }
 
 /// <summary>Einfache View-Navigation innerhalb des Hauptfensters (Views bleiben im Speicher → Zustand bleibt erhalten).</summary>

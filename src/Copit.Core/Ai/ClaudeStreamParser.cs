@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Copit.Core.Models;
@@ -17,6 +17,7 @@ public static class ClaudeStreamParser
         try { n = JsonNode.Parse(line); }
         catch (JsonException) { yield break; }
         if (n == null) yield break;
+        var parent = n.Str("parent_tool_use_id") is { Length: > 0 } pp ? pp : null;
 
         switch (n.Str("type"))
         {
@@ -32,11 +33,11 @@ public static class ClaudeStreamParser
                     var delta = ev?["delta"];
                     switch (delta.Str("type"))
                     {
-                        case "text_delta": yield return new AgentTextDelta(delta.Str("text")); break;
+                        case "text_delta": yield return new AgentTextDelta(delta.Str("text"), parent); break;
                         case "thinking_delta": yield return new AgentThinking(delta.Str("thinking")); break;
                     }
                 }
-                else if (ev.Str("type") == "message_start")
+                else if (ev.Str("type") == "message_start" && parent == null)
                 {
                     var u = ev?["message"]?["usage"];
                     if (u != null) yield return Usage(u);
@@ -49,14 +50,14 @@ public static class ClaudeStreamParser
                 {
                     switch (c.Str("type"))
                     {
-                        case "text": yield return new AgentText(c.Str("text")); break;
+                        case "text": yield return new AgentText(c.Str("text"), parent); break;
                         case "tool_use":
                             yield return new AgentToolUse(c.Str("id"), c.Str("name"),
-                                c?["input"]?.ToJsonString(Json.Compact) ?? "{}");
+                                c?["input"]?.ToJsonString(Json.Compact) ?? "{}", parent);
                             break;
                     }
                 }
-                if (msg?["usage"] is JsonNode usage) yield return Usage(usage);
+                if (msg?["usage"] is JsonNode usage && parent == null) yield return Usage(usage);
                 break;
 
             case "user":
@@ -64,7 +65,7 @@ public static class ClaudeStreamParser
                 {
                     if (c.Str("type") != "tool_result") continue;
                     yield return new AgentToolResult(c.Str("tool_use_id"), ContentToText(c?["content"]),
-                        c?["is_error"]?.GetValue<bool>() ?? false);
+                        c?["is_error"]?.GetValue<bool>() ?? false, parent);
                 }
                 break;
 
@@ -77,7 +78,8 @@ public static class ClaudeStreamParser
                 yield return new AgentResult(
                     n["is_error"]?.GetValue<bool>() ?? false,
                     n.Str("result"), cost, n.Long("duration_ms"), (int)n.Long("num_turns"),
-                    denials, n.Str("session_id"), n.Str("subtype"));
+                    denials, n.Str("session_id"), n.Str("subtype"),
+                    n["usage"] is JsonNode ru ? new TokenUsage(ru.Long("input_tokens"), ru.Long("output_tokens"), ru.Long("cache_read_input_tokens"), ru.Long("cache_creation_input_tokens")) : null);
                 break;
         }
     }

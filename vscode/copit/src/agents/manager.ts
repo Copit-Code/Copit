@@ -5,7 +5,7 @@ import { Agent, AgentEvent, AgentStatus, AutomationEvent, Budget, Mode, newId, P
 import { CliEvent, RunHandle, runCli } from "./cli";
 import * as G from "../git";
 import { flagsFor, PermissionRule } from "../permissions";
-import { budgetCovers, evaluate } from "../budgets";
+import { budgetCovers, evaluate, UsageRecord } from "../budgets";
 
 export const QUESTION_INSTRUCTIONS =
   "Wenn du vom Nutzer eine Entscheidung oder fehlende Information brauchst, stelle die Rückfrage am ENDE deiner Antwort " +
@@ -61,7 +61,8 @@ interface LiveRun {
 export class AgentManager extends EventEmitter {
   private live = new Map<string, LiveRun>();
 
-  constructor(private db: CopitDb, private config: () => ManagerConfig, private rules: () => PermissionRule[], private budgets: () => Budget[]) {
+  constructor(private db: CopitDb, private config: () => ManagerConfig, private rules: () => PermissionRule[], private budgets: () => Budget[],
+    private usage: () => Promise<UsageRecord[]> = async () => []) {
     super();
     // Läufe, die beim letzten Beenden noch liefen, als unterbrochen markieren
     for (const a of db.agents()) if (a.running) {
@@ -119,11 +120,12 @@ export class AgentManager extends EventEmitter {
   }
 
   /** Prüft Budgets mit Hard-Stop. Gibt Fehlertext zurück, falls blockiert. */
-  blockedByBudget(a: Agent): string | undefined {
-    const runs = this.db.runs(0, Date.now() + 1);
-    const agents = new Map(this.db.agents().map((x) => [x.id, x]));
-    for (const b of this.budgets().filter((x) => x.hardStop && budgetCovers(x, a))) {
-      const s = evaluate(b, runs, agents);
+  async blockedByBudget(a: Agent): Promise<string | undefined> {
+    const stops = this.budgets().filter((x) => x.hardStop && budgetCovers(x, a.repo));
+    if (!stops.length) return undefined;
+    const records = await this.usage();
+    for (const b of stops) {
+      const s = evaluate(b, records);
       if (s.fraction >= 1) return `Budget "${b.name}" ist aufgebraucht (${s.used.toFixed(2)} / ${b.amount} ${b.type === "cost" ? "USD" : "h"}, ${s.periodLabel}).`;
     }
     return undefined;
@@ -132,7 +134,7 @@ export class AgentManager extends EventEmitter {
   async start(id: string, message?: string, displayText?: string): Promise<void> {
     const a = this.db.agent(id);
     if (!a || this.live.has(id)) return;
-    const blocked = this.blockedByBudget(a);
+    const blocked = await this.blockedByBudget(a);
     if (blocked) {
       a.status = "need_input"; a.pendingQuestion = blocked;
       this.changed(a);
@@ -251,12 +253,15 @@ export class AgentManager extends EventEmitter {
     run.costUsd = e.cost;
     run.turns = e.turns;
     run.ok = !e.isError;
+    if (e.usage) { run.inputTokens = e.usage.input; run.outputTokens = e.usage.output; run.cacheRead = e.usage.cacheRead; run.cacheWrite = e.usage.cacheWrite; }
+    run.model = a.model;
     this.db.saveRun(run);
     if (lr.textEventId != null) this.db.updateEventText(lr.textEventId, lr.textBuf);
 
     a.running = false;
     if (e.sessionId) a.sessionId = e.sessionId;
     a.agentMs += wall; a.aiMs += run.aiMs; a.toolMs += run.toolMs; a.costUsd += e.cost; a.turns += e.turns;
+    if (e.usage) { a.tokens = (a.tokens ?? 0) + e.usage.input + e.usage.output + e.usage.cacheRead + e.usage.cacheWrite; a.outputTokens = (a.outputTokens ?? 0) + e.usage.output; }
     a.allowedOnce = undefined;
 
     try {
@@ -322,13 +327,43 @@ export class AgentManager extends EventEmitter {
   update(a: Agent) { this.changed(a); }
 }
 
-/** Leitet aus einer Freigabe-Anfrage ein Muster ab (z. B. Bash(git push:*)). */
-export function patternForDenial(tool: string, input: string): string {
-  if (tool !== "Bash") return tool;
+const TWO_WORD = new Set(["git", "npm", "npx", "dotnet", "yarn", "pnpm", "composer", "php", "docker", "kubectl", "gh", "glab"]);
+
+/** Zerlegt eine Shell-Kette (&&, ||, ;, |) in Teilbefehle – Anführungszeichen werden respektiert. */
+export function splitCommands(cmd: string): string[] {
+  const parts: string[] = [];
+  let cur = "", quote = "";
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (quote) { if (c === quote && cmd[i - 1] !== "\\") quote = ""; cur += c; continue; }
+    if (c === '"' || c === "'") { quote = c; cur += c; continue; }
+    const two = cmd.slice(i, i + 2);
+    if (two === "&&" || two === "||") { parts.push(cur); cur = ""; i++; continue; }
+    if (c === ";" || c === "|" || c === "\n") { parts.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  parts.push(cur);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+/** Leitet aus einer Freigabe-Anfrage die nötigen Muster ab (z. B. ["Bash(git add:*)", "Bash(git commit:*)"]). */
+export function patternsForDenial(tool: string, input: string): string[] {
+  if (tool !== "Bash") return [tool];
   try {
     const cmd: string = JSON.parse(input).command ?? "";
-    const words = cmd.trim().split(/\s+/);
-    const head = words[0] === "git" || words[0] === "npm" || words[0] === "dotnet" ? words.slice(0, 2).join(" ") : words[0];
-    return head ? `Bash(${head}:*)` : "Bash";
-  } catch { return "Bash"; }
+    const out = new Set<string>();
+    for (const part of splitCommands(cmd)) {
+      const words = part.split(/\s+/).map((w) => w.replace(/^["']|["']$/g, ""));
+      const exe = (words[0] ?? "").replace(/\.(exe|cmd)$/i, "");
+      if (!exe || exe === "cd" || exe === "pushd" || exe === "popd") continue;
+      const sub = words[1] && !words[1].startsWith("-") ? words[1] : "";
+      out.add(`Bash(${TWO_WORD.has(exe) && sub ? `${exe} ${sub}` : exe}:*)`);
+    }
+    return out.size ? [...out] : ["Bash"];
+  } catch { return ["Bash"]; }
+}
+
+/** Ein Anzeige-Muster (Kompatibilität). */
+export function patternForDenial(tool: string, input: string): string {
+  return patternsForDenial(tool, input).join(", ");
 }

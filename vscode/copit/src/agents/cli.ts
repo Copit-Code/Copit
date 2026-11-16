@@ -53,7 +53,7 @@ export type CliEvent =
   | { t: "tool_result"; toolId: string; content: string; isError: boolean; parent?: string }
   | { t: "usage"; context: number; output: number }
   | { t: "stderr"; text: string }
-  | { t: "result"; isError: boolean; text: string; cost: number; durationMs: number; turns: number; denials: { tool: string; input: string }[]; sessionId?: string; subtype: string };
+  | { t: "result"; isError: boolean; text: string; cost: number; durationMs: number; turns: number; denials: { tool: string; input: string }[]; sessionId?: string; subtype: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number } };
 
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : JSON.stringify(v));
 
@@ -103,6 +103,7 @@ export function parseClaudeLine(line: string): CliEvent[] {
       out.push({
         t: "result", isError: !!n.is_error, text: str(n.result), cost: Number(n.total_cost_usd ?? 0), durationMs: Number(n.duration_ms ?? 0),
         turns: Number(n.num_turns ?? 0), sessionId: n.session_id || undefined, subtype: str(n.subtype),
+        usage: n.usage ? { input: Number(n.usage.input_tokens ?? 0), output: Number(n.usage.output_tokens ?? 0), cacheRead: Number(n.usage.cache_read_input_tokens ?? 0), cacheWrite: Number(n.usage.cache_creation_input_tokens ?? 0) } : undefined,
         denials: (n.permission_denials ?? []).map((d: any) => ({ tool: str(d.tool_name), input: JSON.stringify(d.tool_input ?? {}) })),
       });
       break;

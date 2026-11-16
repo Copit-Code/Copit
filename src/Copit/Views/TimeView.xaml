@@ -99,6 +99,7 @@
                     <Entry Grid.Column="1" Text="{Binding MinHours}" Keyboard="Numeric" HorizontalTextAlignment="End" />
                 </Grid>
                 <ScrollView Grid.Row="2">
+                  <VerticalStackLayout Spacing="16">
                     <VerticalStackLayout BindableLayout.ItemsSource="{Binding Rules}" Spacing="10">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
@@ -116,6 +117,57 @@
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
                     </VerticalStackLayout>
+
+                    <!-- Gelernte Zuordnungen Thema/Repo -> Ticket -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="GELERNTE ZUORDNUNGEN" Style="{StaticResource Caption}" />
+                            <Label Text="Thema / Repo → Ticket, z. B. Weiterentwicklungsprojekte" FontSize="11.5" TextColor="{StaticResource Muted}" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1" Text="Zuordnung" Style="{StaticResource Chip}" Command="{Binding AddTopicCommand}" VerticalOptions="Center" />
+                    </Grid>
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Topics}" Spacing="4">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}">
+                                    <VerticalStackLayout Spacing="0">
+                                        <Label Text="{Binding Topic}" FontSize="12.5" LineBreakMode="TailTruncation" />
+                                        <Label Text="{Binding Repo}" FontSize="10.5" TextColor="{StaticResource Muted}" IsVisible="{Binding Repo, Converter={StaticResource HasText}}" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="{Binding Ticket}" Style="{StaticResource Key}" VerticalOptions="Center" />
+                                    <Label Grid.Column="2" VerticalOptions="Center" FontSize="10.5" TextColor="{StaticResource Muted}" Text="{Binding Hits, StringFormat='{0}x'}">
+                                        <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding Manual}" Value="True"><Setter Property="Text" Value="FEST" /><Setter Property="TextColor" Value="{StaticResource Accent}" /></DataTrigger></Label.Triggers>
+                                    </Label>
+                                    <c:IconButton Grid.Column="3" Icon="trash" IconSize="13" WidthRequest="24" HeightRequest="24"
+                                                  Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteTopicCommand}" CommandParameter="{Binding .}" />
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                    <Label Text="Noch nichts gelernt – Copit merkt sich Zuordnungen beim Buchen und wenn du ein Ticket korrigierst." FontSize="11.5" TextColor="{StaticResource Muted}"
+                           IsVisible="{Binding Topics.Count, Converter={StaticResource None}}" />
+
+                    <!-- Gelerntes Wissen aus Rückfragen -->
+                    <VerticalStackLayout Spacing="2">
+                        <Label Text="GELERNTES WISSEN" Style="{StaticResource Caption}" />
+                        <Label Text="Antworten auf Rückfragen der KI – gelten für alle künftigen Tage" FontSize="11.5" TextColor="{StaticResource Muted}" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Facts}" Spacing="4">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}">
+                                    <VerticalStackLayout Spacing="1">
+                                        <Label Text="{Binding Question}" FontSize="12" TextColor="{StaticResource Text2}" LineBreakMode="WordWrap" />
+                                        <Label Text="{Binding Answer}" FontSize="12.5" FontAttributes="Bold" LineBreakMode="WordWrap" />
+                                    </VerticalStackLayout>
+                                    <c:IconButton Grid.Column="1" Icon="trash" IconSize="13" WidthRequest="24" HeightRequest="24" VerticalOptions="Start"
+                                                  Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteFactCommand}" CommandParameter="{Binding .}" />
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                    <Label Text="Noch keine Antworten gespeichert." FontSize="11.5" TextColor="{StaticResource Muted}" IsVisible="{Binding Facts.Count, Converter={StaticResource None}}" />
+                  </VerticalStackLayout>
                 </ScrollView>
                 <Grid Grid.Row="3" ColumnDefinitions="*,*" ColumnSpacing="10">
                     <Button Text="Regel" Command="{Binding AddRuleCommand}" />
@@ -197,6 +249,46 @@
                         </Border>
                         <Button Grid.Column="1" Text="Ohne KI vorschlagen" Style="{StaticResource Ghost}" HorizontalOptions="End" Command="{Binding HeuristicCommand}" />
                     </Grid>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="QUELLEN DER ANALYSE" Style="{StaticResource Caption}" />
+                        <FlexLayout Wrap="Wrap" AlignItems="Start" JustifyContent="Start">
+                            <Border Padding="10,5" StrokeThickness="1" Stroke="{StaticResource Line}" BackgroundColor="Transparent">
+                                <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding SrcTickets}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="Stroke" Value="{StaticResource Accent}" /></DataTrigger></Border.Triggers>
+                                <Border.GestureRecognizers><TapGestureRecognizer Command="{Binding ToggleSourceCommand}" CommandParameter="tickets" /></Border.GestureRecognizers>
+                                <Label Text="TICKETS" FontSize="11.5" FontFamily="Cascadia Mono" CharacterSpacing="0.6" TextColor="{StaticResource Text2}">
+                                    <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding SrcTickets}" Value="True"><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Label.Triggers>
+                                </Label>
+                            </Border>
+                            <Border Padding="10,5" StrokeThickness="1" Stroke="{StaticResource Line}" BackgroundColor="Transparent">
+                                <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding SrcCommits}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="Stroke" Value="{StaticResource Accent}" /></DataTrigger></Border.Triggers>
+                                <Border.GestureRecognizers><TapGestureRecognizer Command="{Binding ToggleSourceCommand}" CommandParameter="commits" /></Border.GestureRecognizers>
+                                <Label Text="GIT-COMMITS" FontSize="11.5" FontFamily="Cascadia Mono" CharacterSpacing="0.6" TextColor="{StaticResource Text2}">
+                                    <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding SrcCommits}" Value="True"><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Label.Triggers>
+                                </Label>
+                            </Border>
+                            <Border Padding="10,5" StrokeThickness="1" Stroke="{StaticResource Line}" BackgroundColor="Transparent">
+                                <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding SrcGitLab}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="Stroke" Value="{StaticResource Accent}" /></DataTrigger></Border.Triggers>
+                                <Border.GestureRecognizers><TapGestureRecognizer Command="{Binding ToggleSourceCommand}" CommandParameter="gitlab" /></Border.GestureRecognizers>
+                                <Label Text="GITLAB" FontSize="11.5" FontFamily="Cascadia Mono" CharacterSpacing="0.6" TextColor="{StaticResource Text2}">
+                                    <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding SrcGitLab}" Value="True"><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Label.Triggers>
+                                </Label>
+                            </Border>
+                            <Border Padding="10,5" StrokeThickness="1" Stroke="{StaticResource Line}" BackgroundColor="Transparent">
+                                <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding SrcSessions}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="Stroke" Value="{StaticResource Accent}" /></DataTrigger></Border.Triggers>
+                                <Border.GestureRecognizers><TapGestureRecognizer Command="{Binding ToggleSourceCommand}" CommandParameter="sessions" /></Border.GestureRecognizers>
+                                <Label Text="KI-SESSIONS" FontSize="11.5" FontFamily="Cascadia Mono" CharacterSpacing="0.6" TextColor="{StaticResource Text2}">
+                                    <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding SrcSessions}" Value="True"><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Label.Triggers>
+                                </Label>
+                            </Border>
+                            <Border Padding="10,5" StrokeThickness="1" Stroke="{StaticResource Line}" BackgroundColor="Transparent">
+                                <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding SrcNote}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="Stroke" Value="{StaticResource Accent}" /></DataTrigger></Border.Triggers>
+                                <Border.GestureRecognizers><TapGestureRecognizer Command="{Binding ToggleSourceCommand}" CommandParameter="note" /></Border.GestureRecognizers>
+                                <Label Text="NOTIZEN" FontSize="11.5" FontFamily="Cascadia Mono" CharacterSpacing="0.6" TextColor="{StaticResource Text2}">
+                                    <Label.Triggers><DataTrigger TargetType="Label" Binding="{Binding SrcNote}" Value="True"><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Label.Triggers>
+                                </Label>
+                            </Border>
+                        </FlexLayout>
+                    </VerticalStackLayout>
                     <Button Text="Analysieren &amp; Buchungen vorschlagen" Style="{StaticResource Primary}" HeightRequest="44" FontSize="14"
                             Command="{Binding AnalyzeCommand}" IsVisible="{Binding IsWorking, Converter={StaticResource Not}}" />
 
@@ -230,6 +322,38 @@
                         </HorizontalStackLayout>
                     </Border>
 
+                    <!-- Rückfragen der KI -->
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Questions}" Spacing="10">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CardBox}" Padding="14,12" Stroke="{StaticResource Accent}">
+                                    <Border.Triggers><DataTrigger TargetType="Border" Binding="{Binding Answered}" Value="True"><Setter Property="Stroke" Value="{StaticResource Line}" /><Setter Property="Opacity" Value="0.65" /></DataTrigger></Border.Triggers>
+                                    <VerticalStackLayout Spacing="8">
+                                        <HorizontalStackLayout Spacing="8">
+                                            <c:Icon Name="question" Size="14" Color="{StaticResource Accent}" />
+                                            <Label Text="RÜCKFRAGE" Style="{StaticResource Caption}" TextColor="{StaticResource Accent}" VerticalOptions="Center" />
+                                        </HorizontalStackLayout>
+                                        <Label Text="{Binding Question}" FontSize="13" LineBreakMode="WordWrap" />
+                                        <FlexLayout Wrap="Wrap" BindableLayout.ItemsSource="{Binding Options}">
+                                            <BindableLayout.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Text="{Binding .}" Style="{StaticResource Chip}" Margin="0,0,6,6" Clicked="OnQuestionOption" />
+                                                </DataTemplate>
+                                            </BindableLayout.ItemTemplate>
+                                        </FlexLayout>
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <Entry Text="{Binding Answer}" Placeholder="Eigene Antwort, z. B. ORG-1" FontSize="12.5" />
+                                            <Button Grid.Column="1" Text="Merken" Style="{StaticResource Ghost}"
+                                                    Command="{Binding Source={x:Reference Root}, Path=BindingContext.AnswerTypedCommand}" CommandParameter="{Binding .}" />
+                                        </Grid>
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                    <Button Text="Antworten übernehmen &amp; neu analysieren" Style="{StaticResource Ghost}" Command="{Binding ReanalyzeCommand}"
+                            IsVisible="{Binding Questions.Count, Converter={StaticResource Any}}" />
+
                     <VerticalStackLayout BindableLayout.ItemsSource="{Binding Suggestions}" Spacing="10">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
@@ -242,16 +366,33 @@
                                         <DataTrigger TargetType="Border" Binding="{Binding NeedsAccount}" Value="True">
                                             <Setter Property="Stroke" Value="{StaticResource Amber}" />
                                         </DataTrigger>
+                                        <DataTrigger TargetType="Border" Binding="{Binding NeedsTicket}" Value="True">
+                                            <Setter Property="Stroke" Value="{StaticResource Accent}" />
+                                        </DataTrigger>
                                     </Border.Triggers>
                                     <VerticalStackLayout Spacing="8">
                                         <Grid ColumnDefinitions="*,74,Auto" ColumnSpacing="8">
-                                            <VerticalStackLayout Spacing="1">
-                                                <Label Text="{Binding IssueKey}" FontAttributes="Bold" TextColor="{StaticResource Cyan}">
-                                                    <Label.GestureRecognizers>
-                                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenIssueCommand}" CommandParameter="{Binding IssueKey}" />
-                                                    </Label.GestureRecognizers>
-                                                </Label>
-                                                <Label Text="{Binding IssueSummary}" FontSize="12" TextColor="{StaticResource Text2}" LineBreakMode="TailTruncation" />
+                                            <VerticalStackLayout Spacing="3">
+                                                <HorizontalStackLayout Spacing="6" IsVisible="{Binding HasTicket}">
+                                                    <Label Text="{Binding IssueKey}" FontAttributes="Bold" TextColor="{StaticResource Cyan}" VerticalOptions="Center">
+                                                        <Label.GestureRecognizers>
+                                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenIssueCommand}" CommandParameter="{Binding IssueKey}" />
+                                                        </Label.GestureRecognizers>
+                                                    </Label>
+                                                    <c:IconButton Icon="pencil" IconSize="12" WidthRequest="22" HeightRequest="22" ToolTipProperties.Text="Ticket ändern – Copit merkt sich die Zuordnung"
+                                                                  Command="{Binding Source={x:Reference Root}, Path=BindingContext.ChangeTicketCommand}" CommandParameter="{Binding .}" IsVisible="{Binding Booked, Converter={StaticResource Not}}" />
+                                                </HorizontalStackLayout>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" IsVisible="{Binding NeedsTicket}">
+                                                    <Entry Text="{Binding TicketInput}" Placeholder="Ticket zuordnen, z. B. WEI-12" FontSize="12.5" />
+                                                    <Button Grid.Column="1" Text="Zuordnen" Style="{StaticResource Chip}"
+                                                            Command="{Binding Source={x:Reference Root}, Path=BindingContext.AssignTicketCommand}" CommandParameter="{Binding .}" />
+                                                </Grid>
+                                                <Button Text="Task im Epic anlegen (mit Account)" Style="{StaticResource Ghost}" HorizontalOptions="Start" IsVisible="{Binding NeedsTicket}"
+                                                        Command="{Binding Source={x:Reference Root}, Path=BindingContext.CreateTaskCommand}" CommandParameter="{Binding .}" />
+                                                <Label Text="{Binding IssueSummary}" FontSize="12" TextColor="{StaticResource Text2}" LineBreakMode="TailTruncation" IsVisible="{Binding HasTicket}" />
+                                                <Border Style="{StaticResource Pill}" BackgroundColor="{StaticResource Panel}" HorizontalOptions="Start" IsVisible="{Binding HasTopic}" MaximumWidthRequest="300">
+                                                    <Label Text="{Binding TopicText}" FontSize="10.5" TextColor="{StaticResource Text2}" LineBreakMode="TailTruncation" />
+                                                </Border>
                                             </VerticalStackLayout>
                                             <Grid Grid.Column="1">
                                                 <Entry Text="{Binding Hours}" Keyboard="Numeric" HorizontalTextAlignment="End" FontAttributes="Bold" FontSize="15" Margin="0,0,14,0" />
@@ -263,13 +404,17 @@
                                             </Grid>
                                         </Grid>
                                         <Editor Text="{Binding Comment}" AutoSize="TextChanges" MinimumHeightRequest="40" FontSize="12.5" Placeholder="Buchungstext" />
+                                        <Label Text="{Binding HumanText}" FontSize="11" TextColor="{StaticResource Text2}" IsVisible="{Binding HasHuman}" />
                                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                             <Label Text="{Binding Reason}" FontSize="11" TextColor="{StaticResource Muted}" LineBreakMode="WordWrap" />
-                                            <Border Grid.Column="1" Style="{StaticResource Pill}" BackgroundColor="{StaticResource Panel}" IsVisible="{Binding ShowAccount}">
+                                            <Border Grid.Column="1" Style="{StaticResource Pill}" BackgroundColor="{StaticResource Panel}" IsVisible="{Binding ShowAccount}" Stroke="{StaticResource Green}" StrokeThickness="1">
+                                                <Border.Triggers>
+                                                    <DataTrigger TargetType="Border" Binding="{Binding NeedsAccount}" Value="True"><Setter Property="Stroke" Value="{StaticResource Amber}" /></DataTrigger>
+                                                </Border.Triggers>
                                                 <Border.GestureRecognizers>
                                                     <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditAccountCommand}" CommandParameter="{Binding .}" />
                                                 </Border.GestureRecognizers>
-                                                <Label Text="{Binding AccountText}" FontSize="11" TextColor="{StaticResource Text2}">
+                                                <Label Text="{Binding AccountText}" FontSize="10.5" FontFamily="Cascadia Mono" TextColor="{StaticResource Green}">
                                                     <Label.Triggers>
                                                         <DataTrigger TargetType="Label" Binding="{Binding NeedsAccount}" Value="True"><Setter Property="TextColor" Value="{StaticResource Amber}" /></DataTrigger>
                                                     </Label.Triggers>
@@ -310,7 +455,7 @@
                 <VerticalStackLayout Spacing="14">
                     <HorizontalStackLayout Spacing="10">
                         <c:Icon Name="alert" Color="{StaticResource Amber}" Size="23" />
-                        <Label Text="Account fehlt" Style="{StaticResource H2}" />
+                        <Label Text="{Binding AccountDialogTitle}" Style="{StaticResource H2}" />
                     </HorizontalStackLayout>
                     <Label LineBreakMode="WordWrap">
                         <Label.FormattedText>

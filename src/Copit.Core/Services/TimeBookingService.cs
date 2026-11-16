@@ -18,8 +18,10 @@ public class DayContext
     public List<GitCommit> Commits { get; set; } = [];
     public string DayNote { get; set; } = "";
     public List<string> ProjectNotes { get; set; } = [];
-    public List<string> Sessions { get; set; } = [];
+    public List<DaySession> Sessions { get; set; } = [];
     public List<string> Warnings { get; set; } = [];
+    public List<TopicMapping> Topics { get; set; } = [];
+    public List<TimeFact> Facts { get; set; } = [];
     public double BookedHours => ExistingWorklogs.Sum(w => w.TimeSpentSeconds) / 3600.0;
     public double RemainingHours => Math.Max(0, TargetHours - BookedHours);
 }
@@ -28,6 +30,7 @@ public class BookingPlan
 {
     public string Summary { get; set; } = "";
     public List<BookingSuggestion> Bookings { get; set; } = [];
+    public List<TimeQuestion> Questions { get; set; } = [];
 }
 
 public partial class TimeBookingService(ConnectionHub hub, DataService data, SettingsService settings, GitService git, AiService ai)
@@ -49,15 +52,18 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
 
     // ------------------------------------------------------------------ Sammeln
 
-    public async Task<DayContext> GatherAsync(DateOnly day, double targetHours, IEnumerable<string> sessionInfos,
-        Action<string> progress, CancellationToken ct = default)
+    public async Task<DayContext> GatherAsync(DateOnly day, double targetHours, IEnumerable<DaySession> sessions,
+        Action<string> progress, CancellationToken ct = default, BookingSources? sources = null)
     {
+        var src = sources ?? new BookingSources();
         var ctx = new DayContext { Date = day, TargetHours = targetHours };
         var entry = data.PeekDay(day);
-        ctx.DayNote = entry?.Note ?? "";
-        ctx.ProjectNotes = data.NotesOn(day)
-            .Select(n => $"[{data.Project(n.ProjectId)?.Name ?? "?"}] {n.Text}").ToList();
-        ctx.Sessions = sessionInfos.ToList();
+        ctx.DayNote = src.Note ? entry?.Note ?? "" : "";
+        ctx.ProjectNotes = src.Note ? data.NotesOn(day)
+            .Select(n => $"[{data.Project(n.ProjectId)?.Name ?? "?"}] {n.Text}").ToList() : [];
+        ctx.Sessions = src.Sessions ? sessions.Where(s => s.Minutes > 0).ToList() : [];
+        ctx.Topics = data.TimeMemory.Value.Topics.ToList();
+        ctx.Facts = data.TimeMemory.Value.Facts.ToList();
 
         var jira = hub.Jira;
         if (jira != null)
@@ -66,7 +72,7 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
             try { ctx.ExistingWorklogs = await jira.GetMyWorklogsAsync(day, day, ct); }
             catch (Exception e) { ctx.Warnings.Add("Worklogs: " + e.Message); }
 
-            progress("Jira · suche bearbeitete Tickets");
+            if (src.Tickets) progress("Jira · suche bearbeitete Tickets");
             var d0 = day.ToString("yyyy-MM-dd"); var d1 = day.AddDays(1).ToString("yyyy-MM-dd");
             var queries = new[]
             {
@@ -75,7 +81,7 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
                 $"issueFunction in commented(\"by currentUser() on {d0}\")",
                 "assignee = currentUser() AND statusCategory = \"In Progress\"",
             };
-            foreach (var q in queries)
+            foreach (var q in src.Tickets ? queries : [])
             {
                 try { ctx.Issues.AddRange(await jira.SearchAsync(q, 60, ct)); }
                 catch { /* manche JQL-Funktionen (ScriptRunner) sind nicht überall verfügbar */ }
@@ -84,7 +90,7 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         else ctx.Warnings.Add("Jira ist nicht konfiguriert.");
 
         var gl = hub.GitLab;
-        if (gl != null)
+        if (gl != null && src.GitLab)
         {
             progress("GitLab · lade Aktivitäten (Pushes, MRs, Kommentare)");
             try
@@ -96,8 +102,8 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
             catch (Exception e) { ctx.Warnings.Add("GitLab: " + e.Message); }
         }
 
-        progress("Git · durchsuche lokale Repositories");
-        foreach (var p in data.Projects.Value.Projects.Where(p => GitService.IsRepo(p.SourceFolder)))
+        if (src.Commits) progress("Git · durchsuche lokale Repositories");
+        foreach (var p in data.Projects.Value.Projects.Where(p => src.Commits && GitService.IsRepo(p.SourceFolder)))
         {
             try
             {
@@ -113,7 +119,9 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         {
             var text = string.Join(" ", ctx.Commits.Select(c => c.Subject))
                        + " " + string.Join(" ", ctx.GitLabEvents.Select(e => $"{e.Ref} {e.CommitTitle} {e.TargetTitle}"))
-                       + " " + ctx.DayNote + " " + string.Join(" ", ctx.ProjectNotes) + " " + string.Join(" ", ctx.Sessions);
+                       + " " + ctx.DayNote + " " + string.Join(" ", ctx.ProjectNotes)
+                       + " " + string.Join(" ", ctx.Sessions.Select(s => $"{s.Title} {s.Branch} {s.Ticket}"))
+                       + " " + string.Join(" ", ctx.Topics.Select(t => t.Ticket));
             var known = ctx.Issues.Select(i => i.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var keys = IssueKeyRegex().Matches(text).Select(m => m.Value.ToUpperInvariant()).Distinct().Where(k => !known.Contains(k)).Take(40).ToList();
             if (keys.Count > 0)
@@ -149,7 +157,17 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         sb.AppendLine("Du bist ein Assistent für Zeiterfassung in Jira. Erstelle Buchungsvorschläge für EINEN Arbeitstag.");
         sb.AppendLine($"Datum: {ctx.Date:dddd, dd.MM.yyyy}");
         sb.AppendLine($"Soll-Stunden: {ctx.TargetHours.ToString("0.##", inv)}h · bereits gebucht: {ctx.BookedHours.ToString("0.##", inv)}h · ZU VERTEILEN: {ctx.RemainingHours.ToString("0.##", inv)}h");
-        sb.AppendLine($"Rundung: Vielfache von {T.RoundingMinutes} Minuten. Die Summe der Vorschläge MUSS exakt den zu verteilenden Stunden entsprechen.");
+        sb.AppendLine($"Rundung: Vielfache von {T.RoundingMinutes} Minuten.");
+        if (T.HumanEffort)
+        {
+            sb.AppendLine($"""
+                AUFWAND: Gebucht wird, was eine erfahrene Person OHNE KI-Unterstützung für die tatsächlich erledigte Arbeit gebraucht hätte –
+                lieber etwas weniger als zu viel. Schätze pro Arbeitsblock diesen Personen-Aufwand ("humanHours") anhand von Umfang der Änderungen,
+                Commits, Tickets und KI-Session-Zeit (KI-Zeit ist NICHT Personenzeit). "hours" = humanHours × {T.EffortFactor.ToString("0.##", inv)}.
+                Die Summe darf die zu verteilenden {ctx.RemainingHours.ToString("0.##", inv)}h NICHT überschreiten, muss sie aber nicht auffüllen.
+                """);
+        }
+        else sb.AppendLine("Die Summe der Vorschläge MUSS exakt den zu verteilenden Stunden entsprechen.");
         sb.AppendLine();
         var rules = T.RuleSets.Where(r => r.Enabled && !string.IsNullOrWhiteSpace(r.Text)).ToList();
         if (rules.Count > 0)
@@ -171,6 +189,21 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
             sb.AppendLine("## Bereits gebucht (nicht erneut buchen)");
             foreach (var w in ctx.ExistingWorklogs)
                 sb.AppendLine($"- {w.IssueKey}: {(w.TimeSpentSeconds / 3600.0).ToString("0.##", inv)}h – {w.Comment}");
+            sb.AppendLine();
+        }
+        var facts = ctx.Facts.TakeLast(60).ToList();
+        if (facts.Count > 0)
+        {
+            sb.AppendLine("## Gelerntes Wissen aus früheren Rückfragen (verbindlich anwenden)");
+            facts.ForEach(f => sb.AppendLine($"- F: {f.Question} → A: {f.Answer}"));
+            sb.AppendLine();
+        }
+        var topics = ctx.Topics.Where(t => t.Ticket.Length > 0).OrderByDescending(t => t.Manual).ThenByDescending(t => t.Hits).Take(40).ToList();
+        if (topics.Count > 0)
+        {
+            sb.AppendLine("## Bekannte Zuordnungen Thema/Repo → Ticket (Weiterentwicklung u. ä. – gelernt aus früheren Buchungen)");
+            topics.ForEach(t => sb.AppendLine($"- {(t.Repo != null ? $"[{t.Repo}] " : "")}{t.Topic} → {t.Ticket}{(t.Manual ? " (fest)" : $" ({t.Hits}× gebucht)")}"));
+            sb.AppendLine("Arbeit OHNE Ticketnummer (Commits, Sessions, Notiz) ordnest du über diese Zuordnungen dem passenden Ticket zu. Feste Zuordnungen haben Vorrang.");
             sb.AppendLine();
         }
         sb.AppendLine("## Jira-Tickets (Kandidaten)");
@@ -198,18 +231,24 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         }
         if (ctx.Sessions.Count > 0)
         {
-            sb.AppendLine("## KI-Sessions in Copit an diesem Tag");
-            ctx.Sessions.ForEach(s => sb.AppendLine("- " + s));
+            sb.AppendLine("## KI-Agent-Sessions an diesem Tag (aktive Zeit – starkes Signal für die Verteilung)");
+            ctx.Sessions.ForEach(s => sb.AppendLine($"- {s.Minutes} min · [{s.Project}{(s.Branch != null ? " · " + s.Branch : "")}] {(s.Ticket != null ? s.Ticket + " " : "")}{s.Title}"));
             sb.AppendLine();
         }
         sb.AppendLine("""
             ## Aufgabe
-            Verteile die Stunden sinnvoll auf die passendsten Tickets. Nutze nur Ticket-Keys aus den Daten oben
-            (oder aus der Notiz des Nutzers). Schreibe pro Buchung einen guten, konkreten Buchungstext auf Deutsch
-            (1–2 Sätze, was fachlich gemacht wurde). Begründe kurz, warum die Zeit auf dieses Ticket gehört.
-            Antworte AUSSCHLIESSLICH mit JSON in diesem Format:
+            Verteile die Stunden auf die passendsten Tickets. Nutze nur Ticket-Keys aus den Daten oben (oder aus der Notiz).
+            Gibt es für einen Arbeitsblock KEIN passendes Ticket, lass issueKey leer (""), gib aber Thema, Repo, Stunden und
+            Buchungstext trotzdem an – der Nutzer ordnet das Ticket dann zu.
+            Schreibe pro Buchung einen konkreten Buchungstext auf Deutsch (1–2 Sätze, was fachlich gemacht wurde) und eine kurze Begründung.
+            Gib pro Buchung zusätzlich ein kurzes Thema (2–4 Wörter, z. B. "Checkout Performance") und das Repository/Projekt an.
+            RÜCKFRAGEN: Ist etwas wirklich unklar (z. B. Meeting ohne Ticket, Arbeit passt zu mehreren Tickets, unbekanntes Thema) und
+            NICHT durch das gelernte Wissen oder die Zuordnungen beantwortet, stelle bis zu 3 kurze Rückfragen mit 2–4 konkreten
+            Antwortoptionen (z. B. Ticket-Keys). Formuliere sie allgemeingültig, damit die Antwort auch für künftige Tage gilt.
+            Mache trotzdem schon Vorschläge nach bestem Wissen. Keine Rückfragen zu Dingen, die eindeutig sind.
+            Antworte AUSSCHLIESSLICH mit JSON:
             ```json
-            {"summary":"Ein Satz zum Tag","bookings":[{"issueKey":"ABC-123","hours":2.5,"comment":"Buchungstext","reason":"Begründung","confidence":0.8}]}
+            {"summary":"Ein Satz zum Tag","bookings":[{"issueKey":"ABC-123","humanHours":3,"hours":2.5,"comment":"Buchungstext","reason":"Begründung","confidence":0.8,"topic":"Thema","repo":"repo-name"}],"questions":[{"question":"Auf welches Ticket gehören Daily-Meetings?","options":["ORG-1","HAW-12"]}]}
             ```
             """);
         return sb.ToString();
@@ -226,16 +265,28 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
             var key = b.Str("issueKey");
             if (string.IsNullOrWhiteSpace(key)) key = b.Str("key");
             var hours = JsonExtract.Num(b, "hours");
-            if (string.IsNullOrWhiteSpace(key) || hours <= 0) continue;
+            var topic = b.Str("topic");
+            if ((string.IsNullOrWhiteSpace(key) && string.IsNullOrWhiteSpace(topic)) || hours <= 0) continue;
             plan.Bookings.Add(new BookingSuggestion
             {
-                IssueKey = key.Trim().ToUpperInvariant(),
+                IssueKey = (key ?? "").Trim().ToUpperInvariant(),
+                Topic = string.IsNullOrWhiteSpace(topic) ? null : topic.Trim(),
+                Repo = b.Str("repo") is { Length: > 0 } repo ? repo : null,
                 Hours = hours,
                 Comment = b.Str("comment"),
                 Reason = b.Str("reason"),
+                HumanHours = JsonExtract.Num(b, "humanHours"),
                 Confidence = JsonExtract.Num(b, "confidence", 0.7)
             });
         }
+        if (node is JsonObject && node["questions"] is JsonArray qs)
+            foreach (var q in qs.Take(3))
+            {
+                var text = q is JsonValue ? q.ToString() : q.Str("question");
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                List<string> opts = q is JsonObject && q["options"] is JsonArray oa ? oa.Select(o => o?.ToString() ?? "").Where(o => o.Length > 0).Take(5).ToList() : [];
+                plan.Questions.Add(new TimeQuestion { Question = text.Trim(), Options = opts });
+            }
         return plan;
     }
 
@@ -251,6 +302,15 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         var diff = Math.Round((targetHours - items.Sum(i => i.Hours)) / step) * step;
         var biggest = items.OrderByDescending(i => i.Hours).First();
         biggest.Hours = Math.Max(step, Math.Round((biggest.Hours + diff) / step) * step);
+    }
+
+    /// <summary>Personen-Aufwand: nur aufs Raster runden und höchstens bis zum Ziel kürzen – nie auffüllen.</summary>
+    public static void Cap(List<BookingSuggestion> items, double maxHours, int roundingMinutes)
+    {
+        if (items.Count == 0) return;
+        var step = Math.Max(1, roundingMinutes) / 60.0;
+        foreach (var i in items) i.Hours = Math.Max(step, Math.Round(i.Hours / step) * step);
+        if (maxHours > 0 && items.Sum(i => i.Hours) > maxHours + 0.001) Normalize(items, maxHours, roundingMinutes);
     }
 
     /// <summary>Fallback ohne KI: verteilt nach Aktivität.</summary>
@@ -270,12 +330,28 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
                 if (t.Length > 3 && l.Count < 3 && !l.Contains(t)) l.Add(t);
             }
         }
-        foreach (var c in ctx.Commits) Add(c.Subject, 2);
+        string? ByRepo(string repo) => ctx.Topics.Where(t => t.Repo != null && t.Ticket.Length > 0 && repo.Contains(t.Repo, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(t => t.Manual).ThenByDescending(t => t.Hits).FirstOrDefault()?.Ticket;
+        bool HasKey(string t) => IssueKeyRegex().Matches(t).Any(m => ctx.Issues.Any(i => i.Key.Equals(m.Value, StringComparison.OrdinalIgnoreCase)));
+        string ViaTopic(string text, string repo) => HasKey(text) ? text : $"{text} {ByRepo(repo)}";
+        foreach (var s in ctx.Sessions) Add(ViaTopic($"{s.Ticket} {s.Title} {s.Branch}", s.Project), s.Minutes / 15.0);
+        foreach (var c in ctx.Commits) Add(ViaTopic(c.Subject, c.Repo), 2);
         foreach (var e in ctx.GitLabEvents) Add($"{e.Ref} {e.CommitTitle} {e.TargetTitle}", 1.5);
         Add(ctx.DayNote, 3);
         foreach (var i in ctx.Issues.Where(i => i.Updated.HasValue && DateOnly.FromDateTime(i.Updated.Value) == ctx.Date))
             scores[i.Key] = scores.GetValueOrDefault(i.Key) + 1;
-        if (scores.Count == 0)
+        // Arbeit ohne bekanntes Ticket: pro Repo als offener Block (Ticket wählt der Nutzer, Copit lernt es)
+        var open = new Dictionary<string, (double Score, List<string> Notes)>(StringComparer.OrdinalIgnoreCase);
+        void AddOpen(string repo, double w, string note)
+        {
+            if (string.IsNullOrWhiteSpace(repo) || ByRepo(repo) != null) return;
+            var o = open.TryGetValue(repo, out var x) ? x : (0, new List<string>());
+            if (o.Item2.Count < 3 && note.Length > 0 && !o.Item2.Contains(note)) o.Item2.Add(note);
+            open[repo] = (o.Item1 + w, o.Item2);
+        }
+        foreach (var s in ctx.Sessions.Where(s => !HasKey($"{s.Ticket} {s.Title} {s.Branch}"))) AddOpen(s.Project, s.Minutes / 15.0, s.Title);
+        foreach (var c in ctx.Commits.Where(c => !HasKey(c.Subject))) AddOpen(c.Repo, 2, c.Subject);
+        if (scores.Count == 0 && open.Count == 0)
             foreach (var i in ctx.Issues.Where(i => i.Bucket == IssueBucket.InProgress).Take(3)) scores[i.Key] = 1;
 
         var plan = new BookingPlan { Summary = "Heuristischer Vorschlag (ohne KI) basierend auf Commits und Ticket-Aktivität." };
@@ -285,6 +361,8 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
             var text = comments.TryGetValue(key, out var l) && l.Count > 0 ? string.Join("; ", l) : $"Arbeit an: {issue.Summary}";
             plan.Bookings.Add(new BookingSuggestion { IssueKey = key, IssueSummary = issue.Summary, Hours = score, Comment = text, Reason = $"Aktivitäts-Score {score:0.#}", Confidence = 0.5 });
         }
+        foreach (var (repo, o) in open.OrderByDescending(x => x.Value.Score).Take(4))
+            plan.Bookings.Add(new BookingSuggestion { IssueKey = "", Hours = o.Score, Comment = string.Join("; ", o.Notes), Reason = "kein Ticket gefunden – bitte zuordnen", Confidence = 0.4, Topic = $"Arbeit in {repo}", Repo = repo });
         Normalize(plan.Bookings, ctx.RemainingHours, T.RoundingMinutes);
         return plan;
     }
@@ -297,7 +375,8 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         var plan = ParsePlan(text);
         foreach (var b in plan.Bookings)
             b.IssueSummary = ctx.Issues.FirstOrDefault(i => i.Key.Equals(b.IssueKey, StringComparison.OrdinalIgnoreCase))?.Summary ?? b.IssueSummary;
-        Normalize(plan.Bookings, ctx.RemainingHours, T.RoundingMinutes);
+        if (T.HumanEffort) Cap(plan.Bookings, ctx.RemainingHours, T.RoundingMinutes);
+        else Normalize(plan.Bookings, ctx.RemainingHours, T.RoundingMinutes);
         await ResolveAccountsAsync(plan.Bookings, ctx.Issues, progress, ct);
         return plan;
     }
@@ -309,17 +388,18 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         if (string.IsNullOrWhiteSpace(settings.Settings.Jira.AccountFieldId) && !settings.Settings.Jira.UseTempo) return;
         progress("Jira · prüfe Accounts der Tickets");
         var mem = data.Accounts.Value;
-        foreach (var b in items)
+        foreach (var b in items.Where(i => i.IssueKey.Length > 0))
         {
             var issue = known.FirstOrDefault(i => i.Key.Equals(b.IssueKey, StringComparison.OrdinalIgnoreCase));
             if (issue == null && hub.Jira != null) issue = await SafeGetIssue(hub.Jira, b.IssueKey, ct);
             if (issue != null && string.IsNullOrWhiteSpace(b.IssueSummary)) b.IssueSummary = issue.Summary;
-            if (!string.IsNullOrWhiteSpace(issue?.Account)) { b.Account = issue!.Account; b.AccountFromMemory = false; continue; }
+            if (!string.IsNullOrWhiteSpace(issue?.Account)) { b.Account = issue!.Account; b.AccountFromMemory = false; b.AccountFromIssue = true; continue; }
+            b.AccountFromIssue = false;
             if (mem.IssueAccounts.TryGetValue(b.IssueKey, out var a) || mem.ProjectAccounts.TryGetValue(ProjectKey(b.IssueKey), out a))
             {
                 b.Account = a; b.AccountFromMemory = true;
             }
-            else b.Account = null;
+            else { b.Account = null; b.AccountFromMemory = false; }
         }
     }
 
@@ -346,19 +426,95 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
         var lastEnd = existing.Select(w => w.Started.AddSeconds(w.TimeSpentSeconds)).DefaultIfEmpty(start).Max();
         if (lastEnd > start && DateOnly.FromDateTime(lastEnd) == day) start = lastEnd;
         var results = new List<(BookingSuggestion, string?)>();
-        foreach (var b in items.Where(i => !i.Booked && i.Hours > 0))
+        foreach (var b in items.Where(i => !i.Booked && i.Hours > 0 && i.IssueKey.Length > 0))
         {
-            progress($"Buche {b.Hours:0.##}h auf {b.IssueKey}");
+            progress($"Buche {b.Hours:0.##}h auf {b.IssueKey}{(string.IsNullOrWhiteSpace(b.Account) ? "" : $" · Account {b.Account}")}");
             var seconds = (long)Math.Round(b.Hours * 3600);
+            if (AccountRequired && string.IsNullOrWhiteSpace(b.Account))
+            {
+                results.Add((b, "Kein Account hinterlegt – nicht gebucht."));
+                continue;
+            }
             try
             {
-                await jira.AddWorklogAsync(b.IssueKey, start, seconds, b.Comment, b.Account, ct);
+                b.BookedAccount = await jira.AddWorklogAsync(b.IssueKey, start, seconds, b.Comment, b.Account, ct);
                 b.Booked = true;
+                LearnTopic(data.TimeMemory.Value.Topics, b.Topic, b.Repo, b.IssueKey);
                 results.Add((b, null));
                 start = start.AddSeconds(seconds);
             }
             catch (Exception e) { results.Add((b, e.Message)); }
         }
+        await data.TimeMemory.SaveAsync();
         return results;
+    }
+
+    // ------------------------------------------------------------------ Task im Epic
+
+    /// <summary>Account eines Epics: Account-Feld des Epics, sonst gemerkt (Ticket/Projekt).</summary>
+    public async Task<(string? Account, string Source)> EpicAccountAsync(string epicKey, CancellationToken ct = default)
+    {
+        if (hub.Jira is { } j)
+        {
+            try { if ((await j.GetIssueAsync(epicKey, ct))?.Account is { Length: > 0 } a) return (a, "aus dem Epic"); } catch { }
+        }
+        var mem = data.Accounts.Value;
+        if (mem.IssueAccounts.TryGetValue(epicKey, out var m)) return (m, "gemerkt fürs Epic");
+        if (mem.ProjectAccounts.TryGetValue(ProjectKey(epicKey), out m)) return (m, "gemerkt fürs Projekt");
+        return (null, "");
+    }
+
+    /// <summary>Legt im Epic einen Task an – mit Account – und merkt sich den Account für das neue Ticket.</summary>
+    public async Task<JiraIssue> CreateTaskInEpicAsync(string epicKey, string summary, string description, double estimateHours, string? account, CancellationToken ct = default)
+    {
+        var jira = hub.RequireJira;
+        epicKey = epicKey.Trim().ToUpperInvariant();
+        var key = await jira.CreateIssueAsync(ProjectKey(epicKey), summary.Trim(), description, "Task", estimateHours, epicKey, ct, account);
+        if (!string.IsNullOrWhiteSpace(account)) await RememberAccountAsync(key, account, false);
+        return await jira.GetIssueAsync(key, ct) ?? new JiraIssue { Key = key, Summary = summary, Account = account };
+    }
+
+    // ------------------------------------------------------------------ Gedächtnis
+
+    /// <summary>Merkt sich Thema/Repo → Ticket. weight: 1 = Buchung, 3 = manuelle Korrektur.</summary>
+    public static void LearnTopic(List<TopicMapping> map, string? topic, string? repo, string ticket, int weight = 1)
+    {
+        topic = (topic ?? "").Trim();
+        if ((topic.Length == 0 && string.IsNullOrWhiteSpace(repo)) || string.IsNullOrWhiteSpace(ticket)) return;
+        var t = topic.Length > 0 ? topic : $"Arbeit in {repo}";
+        var hit = map.FirstOrDefault(m => string.Equals(m.Topic.Trim(), t, StringComparison.OrdinalIgnoreCase) && (m.Repo ?? "") == (repo ?? ""));
+        if (hit != null)
+        {
+            if (hit.Ticket != ticket) { if (hit.Manual && weight < 3) return; hit.Ticket = ticket; hit.Hits = weight; }
+            else hit.Hits += weight;
+            hit.LastUsed = DateTime.Now;
+            if (weight >= 3) hit.Manual = true;
+        }
+        else map.Add(new TopicMapping { Topic = t, Ticket = ticket, Repo = repo, Hits = weight, Manual = weight >= 3 });
+        if (map.Count > 200) { var keep = map.OrderByDescending(m => m.LastUsed).Take(200).ToList(); map.Clear(); map.AddRange(keep); }
+    }
+
+    /// <summary>Beantwortete Rückfrage als Wissen speichern (gleiche Frage → Antwort ersetzt).</summary>
+    public static void LearnFact(List<TimeFact> facts, string question, string answer)
+    {
+        question = question.Trim(); answer = answer.Trim();
+        if (question.Length == 0 || answer.Length == 0) return;
+        facts.RemoveAll(f => string.Equals(f.Question.Trim(), question, StringComparison.OrdinalIgnoreCase));
+        facts.Add(new TimeFact { Question = question, Answer = answer });
+        if (facts.Count > 150) facts.RemoveRange(0, facts.Count - 150);
+    }
+
+    public async Task CorrectTicketAsync(BookingSuggestion b, string ticket)
+    {
+        b.IssueKey = ticket.Trim().ToUpperInvariant();
+        LearnTopic(data.TimeMemory.Value.Topics, b.Topic, b.Repo, b.IssueKey, 3);
+        await data.TimeMemory.SaveAsync();
+    }
+
+    public async Task AnswerAsync(TimeQuestion q, string answer)
+    {
+        q.Answer = answer;
+        LearnFact(data.TimeMemory.Value.Facts, q.Question, answer);
+        await data.TimeMemory.SaveAsync();
     }
 }

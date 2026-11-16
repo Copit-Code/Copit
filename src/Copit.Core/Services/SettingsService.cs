@@ -22,6 +22,8 @@ public static class SecretKeys
 {
     public const string JiraToken = "jira.token";
     public const string GitLabToken = "gitlab.token";
+    /// <summary>GitHub-Token (nur Lesezugriff) für private Release-Repos.</summary>
+    public const string GitHubToken = "github.token";
 }
 
 public class SettingsService

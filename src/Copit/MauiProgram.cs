@@ -82,6 +82,9 @@ public static class MauiProgram
         s.AddSingleton<SessionStore>();
         s.AddSingleton<AssistService>();
         s.AddSingleton<AutomationService>();
+        s.AddSingleton<PermissionService>();
+        s.AddSingleton<UpdateService>();
+        s.AddSingleton<ActivityService>(_ => new ActivityService());
         // App
         s.AddSingleton<NavigationService>();
         s.AddSingleton<ToastService>();
@@ -105,6 +108,11 @@ public static class MauiProgram
         s.AddSingleton<SessionView>();
         s.AddSingleton<ToolsView>();
         s.AddSingleton<SettingsView>();
+        s.AddSingleton<BoardView>();
+        s.AddSingleton<ActivityView>();
+        s.AddSingleton<BudgetsView>();
+        s.AddSingleton<AutomationsView>();
+        s.AddSingleton<CustomizeView>();
 
         return builder.Build();
     }

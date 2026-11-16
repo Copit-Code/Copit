@@ -19,12 +19,12 @@ export class AgentsTree implements vscode.TreeDataProvider<Node> {
     if (!n) {
       const all = this.agents();
       const nav: Node[] = [
+        { kind: "nav", label: "Zeitbuchung", command: "copit.openTime", icon: "clock" },
         { kind: "nav", label: "Board", command: "copit.openBoard", icon: "project" },
-        { kind: "nav", label: "Kalender", command: "copit.openCalendar", icon: "calendar" },
+        { kind: "nav", label: "Activity", command: "copit.openCalendar", icon: "pulse" },
         { kind: "nav", label: "Budgets", command: "copit.openBudgets", icon: "credit-card" },
         { kind: "nav", label: "Customize", command: "copit.openPermissions", icon: "shield" },
       ];
-      if (!all.length) return [];
       return [...nav, ...COLUMNS.map((c) => ({ kind: "group" as const, status: c.id, agents: all.filter((a) => a.status === c.id) })).filter((g) => g.agents.length)];
     }
     if (n.kind === "group") return n.agents.map((agent) => ({ kind: "agent" as const, agent }));

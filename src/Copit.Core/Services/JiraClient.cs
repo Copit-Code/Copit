@@ -199,14 +199,19 @@ public class JiraClient
         return $"{local:yyyy-MM-dd'T'HH:mm:ss}.000{sign}{Math.Abs(offset.Hours):00}{Math.Abs(offset.Minutes):00}";
     }
 
-    public async Task AddWorklogAsync(string issueKey, DateTime start, long seconds, string comment, string? account, CancellationToken ct = default)
+    /// <summary>
+    /// Bucht einen Worklog. Mit Account geht die Buchung immer über Tempo (nur dort gibt es Accounts) –
+    /// danach wird geprüft, ob der Account im angelegten Worklog wirklich gesetzt ist.
+    /// </summary>
+    /// <returns>Gebuchter Account laut Jira/Tempo (null = ohne Account gebucht).</returns>
+    public async Task<string?> AddWorklogAsync(string issueKey, DateTime start, long seconds, string comment, string? account, CancellationToken ct = default)
     {
-        if (_s.UseTempo)
+        if (_s.UseTempo || !string.IsNullOrWhiteSpace(account))
         {
             var me = await GetMyselfAsync(ct);
             var attributes = new Dictionary<string, object>();
             if (!string.IsNullOrWhiteSpace(account))
-                attributes[_s.TempoAccountAttributeKey] = new { value = account };
+                attributes[_s.TempoAccountAttributeKey] = new { value = account.Trim() };
             var body = new
             {
                 worker = string.IsNullOrEmpty(me.Key) ? me.Name : me.Key,
@@ -217,12 +222,25 @@ public class JiraClient
                 comment,
                 attributes
             };
-            await PostAsync("rest/tempo-timesheets/4/worklogs/", body, ct);
-            return;
+            JsonNode? res;
+            try { res = await PostAsync("rest/tempo-timesheets/4/worklogs/", body, ct); }
+            catch (ApiException e) when (!_s.UseTempo && e.StatusCode == 404)
+            {
+                throw new InvalidOperationException($"Für {issueKey} ist ein Account hinterlegt, aber Tempo ist nicht erreichbar – ohne Tempo kann Jira keinen Account buchen. Nichts gebucht.");
+            }
+            if (string.IsNullOrWhiteSpace(account)) return null;
+            var booked = (res as JsonArray)?.FirstOrDefault() ?? res;
+            var attr = booked?["attributes"]?[_s.TempoAccountAttributeKey];
+            var actual = attr == null ? null : ReadAccount(attr["value"] ?? attr);
+            if (actual == null && booked?["attributes"] == null) return account; // ältere Tempo-Versionen liefern keine Attribute zurück
+            if (!string.Equals(actual, account.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Worklog auf {issueKey} angelegt, aber Tempo hat den Account \"{account}\" nicht übernommen (gebucht: \"{actual ?? "keiner"}\"). Bitte in Tempo prüfen.");
+            return actual;
         }
 
         var wl = new { comment, started = FormatJiraDate(start), timeSpentSeconds = seconds };
         await PostAsync($"rest/api/2/issue/{Uri.EscapeDataString(issueKey)}/worklog", wl, ct);
+        return null;
     }
 
     public async Task<List<TempoAccount>> GetTempoAccountsAsync(CancellationToken ct = default)
@@ -232,7 +250,7 @@ public class JiraClient
             var node = await GetAsync("rest/tempo-accounts/1/account", ct);
             return (node?.AsArray() ?? [])
                 .Where(a => a.Str("status") is "" or "OPEN")
-                .Select(a => new TempoAccount(a.Str("key"), a.Str("name")))
+                .Select(a => new TempoAccount(a.Str("key"), a.Str("name"), a.Str("id")))
                 .Where(a => a.Key.Length > 0)
                 .OrderBy(a => a.Name).ToList();
         }
@@ -242,7 +260,36 @@ public class JiraClient
     // ---------------- Tickets erstellen ----------------
 
     public async Task<string> CreateIssueAsync(string projectKey, string summary, string description, string issueType,
-        double estimateHours, string? epicKey, CancellationToken ct = default)
+        double estimateHours, string? epicKey, CancellationToken ct = default, string? account = null)
+    {
+        if (!string.IsNullOrWhiteSpace(account) && !string.IsNullOrWhiteSpace(_s.AccountFieldId))
+        {
+            // Tempo-Account-Feld: je nach Version als ID-Zahl, {id} oder Key – nacheinander probieren
+            var acc = (await GetTempoAccountsAsync(ct)).FirstOrDefault(a => string.Equals(a.Key, account, StringComparison.OrdinalIgnoreCase) || string.Equals(a.Id, account, StringComparison.OrdinalIgnoreCase));
+            var variants = new List<JsonNode?>();
+            if (acc != null && long.TryParse(acc.Id, out var idNum)) { variants.Add(JsonValue.Create(idNum)); variants.Add(new JsonObject { ["id"] = acc.Id }); }
+            variants.Add(JsonValue.Create(account));
+            variants.Add(new JsonObject { ["key"] = account });
+            ApiException? lastErr = null;
+            foreach (var v in variants)
+            {
+                try
+                {
+                    var key = await CreateIssueCoreAsync(projectKey, summary, description, issueType, estimateHours, epicKey, (_s.AccountFieldId, v), ct);
+                    var check = await GetIssueAsync(key, ct);
+                    if (check?.Account == null)
+                        throw new InvalidOperationException($"{key} wurde angelegt, aber das Account-Feld ist leer. Bitte in Jira prüfen.");
+                    return key;
+                }
+                catch (ApiException e) when (e.StatusCode == 400) { lastErr = e; }
+            }
+            throw new InvalidOperationException($"Ticket konnte nicht mit Account \"{account}\" angelegt werden: {lastErr?.Message}");
+        }
+        return await CreateIssueCoreAsync(projectKey, summary, description, issueType, estimateHours, epicKey, null, ct);
+    }
+
+    private async Task<string> CreateIssueCoreAsync(string projectKey, string summary, string description, string issueType,
+        double estimateHours, string? epicKey, (string Field, JsonNode? Value)? extra, CancellationToken ct)
     {
         var fields = new JsonObject
         {
@@ -258,6 +305,7 @@ public class JiraClient
             if (!string.IsNullOrWhiteSpace(_s.EpicLinkFieldId)) fields[_s.EpicLinkFieldId] = epicKey;
             else fields["parent"] = new JsonObject { ["key"] = epicKey };
         }
+        if (extra is { } x) fields[x.Field] = x.Value?.DeepClone();
         var node = await PostAsync("rest/api/2/issue", new JsonObject { ["fields"] = fields }, ct);
         return node.Str("key");
     }
@@ -271,4 +319,15 @@ public class JiraClient
 
     public async Task AddCommentAsync(string issueKey, string body, CancellationToken ct = default)
         => await PostAsync($"rest/api/2/issue/{Uri.EscapeDataString(issueKey)}/comment", new { body }, ct);
+
+    /// <summary>Übergang per Name oder Zielstatus ausführen.</summary>
+    public async Task TransitionAsync(string issueKey, string target, CancellationToken ct = default)
+    {
+        var key = Uri.EscapeDataString(issueKey);
+        var list = (await GetAsync($"rest/api/2/issue/{key}/transitions", ct))?["transitions"]?.AsArray() ?? [];
+        var t = list.FirstOrDefault(x => string.Equals(x?["name"]?.ToString(), target, StringComparison.OrdinalIgnoreCase)
+                                       || string.Equals(x?["to"]?["name"]?.ToString(), target, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Übergang \"{target}\" für {issueKey} nicht verfügbar");
+        await PostAsync($"rest/api/2/issue/{key}/transitions", new { transition = new { id = t!["id"]!.ToString() } }, ct);
+    }
 }

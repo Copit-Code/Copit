@@ -33,7 +33,7 @@
     "commands": [
       { "command": "copit.newAgent", "title": "Neuer Agent", "category": "Copit", "icon": "$(add)" },
       { "command": "copit.openBoard", "title": "Board öffnen", "category": "Copit", "icon": "$(project)" },
-      { "command": "copit.openCalendar", "title": "Agent-Kalender", "category": "Copit", "icon": "$(calendar)" },
+      { "command": "copit.openCalendar", "title": "Activity (Agent-Zeiten & Kosten)", "category": "Copit", "icon": "$(pulse)" },
       { "command": "copit.openPermissions", "title": "Permission-Matrix", "category": "Copit", "icon": "$(shield)" },
       { "command": "copit.openAutomations", "title": "Automation-Builder", "category": "Copit", "icon": "$(zap)" },
       { "command": "copit.openAgent", "title": "Agent öffnen", "category": "Copit" },
@@ -42,16 +42,19 @@
       { "command": "copit.toggleAutomation", "title": "Automation an/aus", "category": "Copit" },
       { "command": "copit.setJiraToken", "title": "Jira-Token hinterlegen", "category": "Copit" },
       { "command": "copit.setGitLabToken", "title": "GitLab-Token hinterlegen", "category": "Copit" },
+      { "command": "copit.openTime", "title": "Zeitbuchung (Jira)", "category": "Copit", "icon": "$(clock)" },
       { "command": "copit.openBudgets", "title": "Budgets", "category": "Copit", "icon": "$(credit-card)" },
       { "command": "copit.checkUpdate", "title": "Nach Updates suchen", "category": "Copit" },
       { "command": "copit.newAgentFromTicket", "title": "Agent aus Jira-Ticket", "category": "Copit", "icon": "$(issues)" }
     ],
     "menus": {
       "view/title": [
+        { "command": "copit.openTime", "when": "view == copit.agents", "group": "navigation@0" },
         { "command": "copit.newAgent", "when": "view == copit.agents", "group": "navigation@1" },
         { "command": "copit.openBoard", "when": "view == copit.agents", "group": "navigation@2" },
         { "command": "copit.openCalendar", "when": "view == copit.agents", "group": "navigation@3" },
-        { "command": "copit.openBudgets", "when": "view == copit.agents", "group": "navigation@4" },
+        { "command": "copit.openTime", "title": "Zeitbuchung (Jira)", "category": "Copit", "icon": "$(clock)" },
+      { "command": "copit.openBudgets", "when": "view == copit.agents", "group": "navigation@4" },
         { "command": "copit.openPermissions", "when": "view == copit.agents", "group": "navigation@5" },
         { "command": "copit.openAutomations", "when": "view == copit.automations", "group": "navigation@1" }
       ],
@@ -72,10 +75,14 @@
         "copit.jira.url": { "type": "string", "default": "", "description": "URL des internen Jira (Server/DC)." },
         "copit.jira.authMode": { "type": "string", "enum": ["bearer", "basic"], "default": "bearer" },
         "copit.jira.user": { "type": "string", "default": "" },
+        "copit.jira.accountField": { "type": "string", "default": "", "description": "Custom Field mit dem Account des Tickets (z. B. customfield_10100). Leer = kein Account nötig." },
+        "copit.jira.useTempo": { "type": "boolean", "default": false, "description": "Über Tempo Timesheets buchen (inkl. Account-Attribut)." },
+        "copit.jira.tempoAttribute": { "type": "string", "default": "_Account_", "description": "Key des Tempo Work-Attributes für den Account." },
         "copit.gitlab.url": { "type": "string", "default": "" },
         "copit.ignoreCertificateErrors": { "type": "boolean", "default": false, "description": "Zertifikatsfehler interner Server ignorieren." },
         "copit.pollSeconds": { "type": "number", "default": 60, "description": "Abfrageintervall für Jira/GitLab-Trigger." },
-        "copit.update.repo": { "type": "string", "default": "", "description": "GitHub-Repository (owner/name) mit Copit-Releases für den Auto-Updater." },
+        "copit.prices": { "type": "object", "default": {}, "description": "Preise je Modellfamilie in USD pro 1 Mio. Tokens, z. B. { \"opus\": { \"input\": 5, \"output\": 25 } }. Gilt, wenn die CLI keine Kosten meldet (Claude-Code-Sessions, Schätzung)." },
+        "copit.update.repo": { "type": "string", "default": "Copit-Code/Copit", "description": "GitHub-Repository (owner/name) mit Copit-Releases für den Auto-Updater." },
         "copit.update.auto": { "type": "boolean", "default": true, "description": "Beim Start und stündlich nach neuen Releases suchen." }
       }
     }
@@ -84,7 +91,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node esbuild.mjs --tests && node --test dist-test/core.test.js",
+    "test": "node esbuild.mjs --tests && node --test dist-test/core.test.js dist-test/time.test.js",
     "package": "node esbuild.mjs --production && vsce package --no-dependencies --allow-missing-repository -o ../../dist/copit.vsix"
   },
   "devDependencies": {
