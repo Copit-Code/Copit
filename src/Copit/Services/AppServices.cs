@@ -31,6 +31,7 @@ public static class Routes
     public const string Customize = "customize";
     public const string Docs = "docs";
     public const string Extensions = "extensions";
+    public const string Changes = "changes";
 }
 
 /// <summary>Einfache View-Navigation innerhalb des Hauptfensters (Views bleiben im Speicher → Zustand bleibt erhalten).</summary>
@@ -100,6 +101,26 @@ public static class Dialogs
     {
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", path) { UseShellExecute = true });
+    }
+
+    /// <summary>Datei im Editor an einer Zeile öffnen (VS Code/VSCodium: code -g datei:zeile), sonst mit dem Standardprogramm.</summary>
+    public static void OpenFileAt(string file, int line)
+    {
+        try
+        {
+            var code = CliLocator.Resolve("code");
+            if (code != null)
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(code.FileName) { UseShellExecute = false, CreateNoWindow = true };
+                foreach (var a in code.PrefixArgs) psi.ArgumentList.Add(a);
+                psi.ArgumentList.Add("-g");
+                psi.ArgumentList.Add($"{file}:{Math.Max(1, line)}");
+                System.Diagnostics.Process.Start(psi);
+                return;
+            }
+            if (File.Exists(file)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(file) { UseShellExecute = true });
+        }
+        catch { }
     }
 
     public static void OpenInEditor(string folder)

@@ -189,6 +189,7 @@ public class BoardView : ContentView, IActivatable
         var h = _mgr.Host(a);
         var opts = new List<string> { "Öffnen" };
         if (h.IsRunning) opts.Add("Stoppen");
+        if (!string.IsNullOrWhiteSpace(a.Ticket)) opts.Add("Code-Änderungen des Tickets");
         opts.AddRange(AgentStatusInfo.Columns.Where(c => c.Status != a.Status).Select(c => "→ " + c.Title));
         opts.Add("Archivieren");
         opts.Add("Löschen");
@@ -196,6 +197,7 @@ public class BoardView : ContentView, IActivatable
         if (pick == null) return;
         if (pick == "Öffnen") _nav.Go(Routes.Session, h);
         else if (pick == "Stoppen") h.Stop();
+        else if (pick == "Code-Änderungen des Tickets") { _nav.Go(Routes.Changes, new ChangesRequest(a.ProjectId, a.Ticket)); return; }
         else if (pick.StartsWith("→ ")) Move(a, AgentStatusInfo.Columns.First(c => c.Title == pick[2..]).Status);
         else if (pick == "Archivieren") _mgr.Archive(a);
         else if (pick == "Löschen" && await Dialogs.Confirm("Agent löschen?", $"{a.Title}{(a.Worktree ? "\nDer Worktree wird ebenfalls entfernt." : "")}", "Löschen"))
