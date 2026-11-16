@@ -77,8 +77,16 @@
                                     <c:Icon Name="note" Grid.Column="1" Color="{StaticResource Amber}" IsVisible="{Binding HasNote}" ToolTipProperties.Text="Tagesnotiz" Size="13" />
                                     <Label Grid.Column="2" Text="" FontSize="10" TextColor="{StaticResource Accent}" IsVisible="{Binding HasDraft}" ToolTipProperties.Text="Offene Vorschläge" />
                                 </Grid>
-                                <Label Grid.Row="2" Text="{Binding HoursText}" FontSize="13" FontAttributes="Bold" TextColor="{Binding StateColor}" />
-                                <ProgressBar Grid.Row="3" Progress="{Binding Fraction}" ProgressColor="{Binding StateColor}" HeightRequest="4" />
+                                <VerticalStackLayout Grid.Row="2" Spacing="0" ToolTipProperties.Text="{Binding SplitTooltip}">
+                                    <Label Text="{Binding HoursText}" FontSize="13" FontAttributes="Bold" TextColor="{Binding StateColor}" />
+                                    <!-- Aufteilung: mit Account (grün) · ohne (orange) · unbekannt (grau) -->
+                                    <Label FormattedText="{Binding SplitText}" FontSize="10" FontFamily="Cascadia Mono" LineBreakMode="TailTruncation" />
+                                </VerticalStackLayout>
+                                <Grid Grid.Row="3">
+                                    <ProgressBar IsVisible="{Binding PlainBarVisible}" Progress="{Binding Fraction}" ProgressColor="{Binding StateColor}" HeightRequest="4" />
+                                    <c:SplitBar IsVisible="{Binding SplitVisible}" First="{Binding WithAccount}" Second="{Binding WithoutAccount}" Third="{Binding UnknownAccount}" Scale="{Binding BarScale}"
+                                                FirstColor="{StaticResource Green}" SecondColor="{StaticResource Amber}" ThirdColor="{StaticResource Muted}" TrackColor="{StaticResource LineSoft}" HeightRequest="4" />
+                                </Grid>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -191,27 +199,36 @@
                     </Grid>
 
                     <!-- Bereits gebucht -->
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Worklogs}" Spacing="4">
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding WorklogRows}" Spacing="6">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
-                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                                    <c:Icon Name="check" Color="{StaticResource Green}" Size="14" />
-                                    <Label Grid.Column="1" FontSize="12" LineBreakMode="TailTruncation">
-                                        <Label.FormattedText>
-                                            <FormattedString>
-                                                <Span Text="{Binding IssueKey}" FontAttributes="Bold" />
-                                                <Span Text="" />
-                                                <Span Text="{Binding Comment}" TextColor="{StaticResource Text2}" />
-                                            </FormattedString>
-                                        </Label.FormattedText>
-                                    </Label>
-                                    <HorizontalStackLayout Grid.Column="2" Spacing="4">
-                                        <Label Text="{Binding Hours, StringFormat='{0:0.##}h'}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource Green}" VerticalOptions="Center" />
-                                        <c:IconButton Icon="x" IconSize="11" WidthRequest="20" HeightRequest="20" ToolTipProperties.Text="Interne Buchung entfernen"
-                                                      IsVisible="{Binding Source={x:Reference Root}, Path=BindingContext.IsLocalMode}"
-                                                      Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteWorklogCommand}" CommandParameter="{Binding .}" />
-                                    </HorizontalStackLayout>
-                                </Grid>
+                                <VerticalStackLayout Spacing="2">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                        <c:Icon Name="check" Color="{StaticResource Green}" Size="14" />
+                                        <Label Grid.Column="1" FontSize="12" LineBreakMode="TailTruncation">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="{Binding IssueKey}" FontAttributes="Bold" />
+                                                    <Span Text="  " />
+                                                    <Span Text="{Binding Comment}" TextColor="{StaticResource Text2}" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                        <HorizontalStackLayout Grid.Column="2" Spacing="4">
+                                            <Label Text="{Binding Hours, StringFormat='{0:0.##}h'}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource Green}" VerticalOptions="Center" />
+                                            <c:IconButton Icon="x" IconSize="11" WidthRequest="20" HeightRequest="20" ToolTipProperties.Text="Interne Buchung entfernen"
+                                                          IsVisible="{Binding Source={x:Reference Root}, Path=BindingContext.IsLocalMode}"
+                                                          Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteWorklogCommand}" CommandParameter="{Binding Log}" />
+                                        </HorizontalStackLayout>
+                                    </Grid>
+                                    <Border Style="{StaticResource Pill}" BackgroundColor="{StaticResource Panel}" Stroke="{Binding AccountColor}" StrokeThickness="1"
+                                            IsVisible="{Binding ShowAccount}" HorizontalOptions="Start" Margin="22,0,0,0">
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.FixWorklogAccountCommand}" CommandParameter="{Binding .}" />
+                                        </Border.GestureRecognizers>
+                                        <Label Text="{Binding AccountText}" FontSize="10.5" FontFamily="Cascadia Mono" TextColor="{Binding AccountColor}" />
+                                    </Border>
+                                </VerticalStackLayout>
                             </DataTemplate>
                         </BindableLayout.ItemTemplate>
                     </VerticalStackLayout>

@@ -8,6 +8,22 @@ using Copit.Services;
 
 namespace Copit.ViewModels;
 
+/// <summary>Bereits gebuchter Worklog in der Tagesansicht, mit Account-Status.</summary>
+public partial class WorklogRow(JiraWorklog log, bool accountRequired, bool canFix) : ObservableObject
+{
+    public JiraWorklog Log { get; } = log;
+    public string IssueKey => Log.IssueKey;
+    public string Comment => Log.Comment;
+    public double Hours => Log.Hours;
+    public bool ShowAccount => accountRequired;
+    public bool CanFix => accountRequired && canFix && Log.AccountChecked && !Log.HasAccount;
+    public string AccountText => !Log.AccountChecked ? "ACCOUNT UNBEKANNT"
+        : Log.HasAccount ? $"ACCOUNT {Log.Account}"
+        : CanFix ? "KEIN ACCOUNT – TIPPEN ZUM NACHTRAGEN" : "KEIN ACCOUNT";
+    public Color AccountColor => (Color)Application.Current!.Resources[!Log.AccountChecked ? "Muted" : Log.HasAccount ? "Green" : "Amber"];
+    public void Refresh() { foreach (var n in new[] { nameof(CanFix), nameof(AccountText), nameof(AccountColor) }) OnPropertyChanged(n); }
+}
+
 public partial class DayCell : ObservableObject
 {
     public DateOnly Date { get; init; }
@@ -25,6 +41,42 @@ public partial class DayCell : ObservableObject
     [ObservableProperty] public partial bool HasNote { get; set; }
     [ObservableProperty] public partial bool IsSelected { get; set; }
     [ObservableProperty] public partial bool HasDraft { get; set; }
+
+    // Aufteilung nach Account (nur wenn Accounts Pflicht sind: Tempo oder Account-Feld)
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SplitVisible), nameof(PlainBarVisible), nameof(SplitText), nameof(SplitTooltip), nameof(HasMissingAccount))]
+    public partial bool ShowSplit { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SplitText), nameof(SplitTooltip))] public partial double WithAccount { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SplitText), nameof(SplitTooltip), nameof(HasMissingAccount))] public partial double WithoutAccount { get; set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SplitText), nameof(SplitTooltip))] public partial double UnknownAccount { get; set; }
+    public bool SplitVisible => ShowSplit && Booked > 0;
+    public bool PlainBarVisible => !SplitVisible;
+    public bool HasMissingAccount => ShowSplit && WithoutAccount > 0.001;
+    /// <summary>Balkenlänge: Soll, oder mehr, wenn mehr gebucht ist.</summary>
+    public double BarScale => Math.Max(Target, Booked);
+    public FormattedString SplitText
+    {
+        get
+        {
+            var fs = new FormattedString();
+            if (!SplitVisible || (WithoutAccount <= 0.001 && UnknownAccount <= 0.001)) return fs;
+            Color R(string k) => (Color)Application.Current!.Resources[k];
+            fs.Spans.Add(new Span { Text = $"{WithAccount:0.##}", TextColor = R("Green") });
+            if (WithoutAccount > 0.001) fs.Spans.Add(new Span { Text = $" · {WithoutAccount:0.##} ohne", TextColor = R("Amber") });
+            if (UnknownAccount > 0.001) fs.Spans.Add(new Span { Text = $" · {UnknownAccount:0.##} ?", TextColor = R("Muted") });
+            return fs;
+        }
+    }
+    public string SplitTooltip => !SplitVisible ? "" :
+        $"{WithAccount:0.##}h mit Account · {WithoutAccount:0.##}h ohne Account{(UnknownAccount > 0.001 ? $" · {UnknownAccount:0.##}h Account unbekannt" : "")}";
+
+    public void SetHours(DayHours h, bool split)
+    {
+        WithAccount = h.WithAccount; WithoutAccount = h.WithoutAccount; UnknownAccount = h.Unknown;
+        Booked = h.Total;
+        ShowSplit = split;
+        OnPropertyChanged(nameof(SplitVisible)); OnPropertyChanged(nameof(PlainBarVisible)); OnPropertyChanged(nameof(BarScale));
+        OnPropertyChanged(nameof(SplitText)); OnPropertyChanged(nameof(SplitTooltip)); OnPropertyChanged(nameof(HasMissingAccount));
+    }
 
     public double Fraction => Target > 0 ? Math.Min(1, Booked / Target) : Booked > 0 ? 1 : 0;
     public double Missing => Math.Max(0, Target - Booked);
@@ -132,6 +184,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
 
     public ObservableCollection<DayCell> Days { get; } = [];
     public ObservableCollection<JiraWorklog> Worklogs { get; } = [];
+    public ObservableCollection<WorklogRow> WorklogRows { get; } = [];
     public ObservableCollection<StepVM> Steps { get; } = [];
     public ObservableCollection<SuggestionVM> Suggestions { get; } = [];
     public ObservableCollection<RuleSet> Rules { get; } = [];
@@ -200,6 +253,28 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     public bool IsCopilot => Provider == AiProvider.Copilot;
     public string BookButtonText => _time.LocalMode ? "Intern buchen" : "In Jira buchen";
     public bool IsLocalMode => _time.LocalMode;
+
+    /// <summary>Account an einer bestehenden Buchung nachtragen (Tempo).</summary>
+    [RelayCommand]
+    private async Task FixWorklogAccountAsync(WorklogRow row)
+    {
+        if (!row.CanFix) return;
+        var mem = _data.Accounts.Value;
+        mem.IssueAccounts.TryGetValue(row.IssueKey, out var guess);
+        if (guess == null) mem.ProjectAccounts.TryGetValue(TimeBookingService.ProjectKey(row.IssueKey), out guess);
+        var probe = new SuggestionVM(new BookingSuggestion { IssueKey = row.IssueKey, IssueSummary = row.Log.IssueSummary, Hours = row.Hours, Account = guess }, true);
+        var acc = await AskAccountAsync(probe);
+        if (string.IsNullOrWhiteSpace(acc)) return;
+        try
+        {
+            await _time.SetWorklogAccountAsync(row.Log, acc, RememberForProject);
+            row.Refresh();
+            Selected?.SetHours(TimeBookingService.Split(Worklogs), _time.AccountRequired);
+            UpdateMonthStats();
+            _toast.Success("Account nachgetragen", $"{row.IssueKey} · {row.Hours:0.##}h → {acc}");
+        }
+        catch (Exception e) { _toast.Show("Nachtragen fehlgeschlagen", e.Message, NoticeLevel.Error); }
+    }
 
     [RelayCommand]
     private async Task DeleteWorklogAsync(JiraWorklog w)
@@ -304,8 +379,9 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         LoadingMonth = true;
         try
         {
-            var booked = await _time.GetBookedHoursAsync(start, start.AddDays(41));
-            foreach (var c in Days) c.Booked = booked.GetValueOrDefault(c.Date);
+            var booked = await _time.GetBookedSplitAsync(start, start.AddDays(41));
+            var split = _time.AccountRequired;
+            foreach (var c in Days) c.SetHours(booked.GetValueOrDefault(c.Date) ?? new DayHours(0, 0, 0), split);
             UpdateMonthStats();
             OnPropertyChanged(nameof(BookedText));
             if (Selected != null) await LoadWorklogsAsync(Selected.Date);
@@ -325,6 +401,9 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         var missingDays = inMonth.Where(d => d.Date < today && d.Missing > 0.01).ToList();
         MonthMissing = missingDays.Count == 0 ? "Keine Lücken" : $"{missingDays.Count} Tage mit Lücken · {missingDays.Sum(d => d.Missing):0.#}h offen";
         MonthFraction = targetSoFar > 0 ? Math.Min(1, booked / targetSoFar) : 0;
+        var without = inMonth.Sum(d => d.WithoutAccount);
+        if (_time.AccountRequired && without > 0.001)
+            MonthMissing += $" · {without:0.#}h ohne Account ({inMonth.Count(d => d.HasMissingAccount)} Tage)";
     }
 
     [RelayCommand]
@@ -350,13 +429,17 @@ public partial class TimeViewModel : ObservableObject, IActivatable
 
     private async Task LoadWorklogsAsync(DateOnly d)
     {
-        Worklogs.Clear();
+        Worklogs.Clear(); WorklogRows.Clear();
         try
         {
             var logs = await _time.GetWorklogsAsync(d, d);
             if (Selected?.Date != d) return;
-            Worklogs.Clear();
-            foreach (var l in logs) Worklogs.Add(l);
+            Worklogs.Clear(); WorklogRows.Clear();
+            var canFix = _settings.Settings.Jira.UseTempo && _hub.Jira != null;
+            foreach (var l in logs) { Worklogs.Add(l); WorklogRows.Add(new WorklogRow(l, _time.AccountRequired, canFix)); }
+            // Kalenderzelle mit dem frischen Stand abgleichen
+            Selected?.SetHours(TimeBookingService.Split(logs), _time.AccountRequired);
+            UpdateMonthStats();
         }
         catch { }
     }
