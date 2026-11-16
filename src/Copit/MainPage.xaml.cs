@@ -45,6 +45,11 @@ public partial class MainPage : ContentPage
             var row = NavRow(item.Route, item.Icon, item.Label);
             (item.Bottom ? NavBottom : NavStack).Children.Add(row);
         }
+        // Tools aus Extensions (z. B. MCP-Auswertung) als eigene Navigationseinträge
+        NavStack.Children.Add(_extToolNav);
+        var extensions = sp.GetRequiredService<ExtensionService>();
+        extensions.Changed += () => MainThread.BeginInvokeOnMainThread(() => BuildExtensionNav(extensions));
+        BuildExtensionNav(extensions);
 
         nav.Navigated += Show;
         toasts.Shown += ShowToast;
@@ -124,6 +129,18 @@ public partial class MainPage : ContentPage
         Dispatcher.StartTimer(TimeSpan.FromSeconds(20), () => { _ = Check(); return false; });
     }
 
+    private readonly VerticalStackLayout _extToolNav = new() { Spacing = 1 };
+
+    private void BuildExtensionNav(ExtensionService extensions)
+    {
+        foreach (var child in _extToolNav.Children.OfType<Grid>()) _navRows.Remove(_navRows.First(x => x.Value.Row == child).Key);
+        _extToolNav.Children.Clear();
+        var tools = extensions.Tools.ToList();
+        if (tools.Count == 0) return;
+        foreach (var (_, tool, route) in tools) _extToolNav.Children.Add(NavRow(route, tool.Icon, tool.Title));
+        if (!string.IsNullOrEmpty(ActiveRoute)) Highlight(ActiveRoute);
+    }
+
     private static Color C(string key) => (Color)Application.Current!.Resources[key];
 
     private Grid NavRow(string route, string icon, string text)
@@ -154,7 +171,7 @@ public partial class MainPage : ContentPage
     private View Resolve(string route)
     {
         if (_views.TryGetValue(route, out var v)) return v;
-        v = route switch
+        v = route.StartsWith("ext:") ? ActivatorUtilities.CreateInstance<ExtensionToolView>(_sp) : route switch
         {
             Routes.Home => _sp.GetRequiredService<DashboardView>(),
             Routes.Time => _sp.GetRequiredService<TimeView>(),
@@ -192,6 +209,7 @@ public partial class MainPage : ContentPage
         }
         try
         {
+            if (route.StartsWith("ext:")) parameter ??= route;
             if (view is IActivatable a) a.OnActivated(parameter);
             else if (view.BindingContext is IActivatable vm) vm.OnActivated(parameter);
         }

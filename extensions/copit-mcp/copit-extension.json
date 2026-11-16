@@ -1,0 +1,26 @@
+{
+  "id": "copit-mcp",
+  "name": "Copit MCP-Auswertung",
+  "version": "1.0.0",
+  "description": "Eigenes Tool: MCP-Server bewusst auswählen (nur diese werden verwendet) und per Prompt beschreiben, welche Auswertung du haben möchtest – mit Vorlagen, Live-Fortschritt, Verlauf und Export.",
+  "author": "Copit",
+  "homepage": "https://github.com/Copit-Code/Copit/tree/main/extensions/copit-mcp",
+  "tools": [
+    {
+      "id": "auswertung",
+      "title": "MCP-Auswertung",
+      "icon": "activity",
+      "kind": "mcp-prompt",
+      "description": "Wähle die Datenquellen (MCP-Server) und beschreibe die Auswertung. Die KI darf ausschließlich die gewählten Server verwenden und ändert nichts.",
+      "placeholder": "z. B. Wie viele Tickets wurden letzte Woche pro Person erledigt, und welche hängen seit über 5 Tagen in Review?",
+      "systemPrompt": "Du bist ein sorgfältiger Analyst. Erstelle die gewünschte Auswertung ausschließlich aus den Daten der bereitgestellten MCP-Server.\n- Nur lesende Tools verwenden; nichts anlegen, ändern oder löschen.\n- Ergebnis auf Deutsch als Markdown: zuerst 2–4 Sätze Kernaussage, dann Tabellen mit den Zahlen, dann Auffälligkeiten/Empfehlungen.\n- Zeitraum, Filter und Annahmen ausdrücklich nennen.\n- Große Datenmengen zusammenfassen (Top-N, Summen), keine Rohdaten-Dumps.",
+      "presets": [
+        { "title": "Wochenrückblick Tickets", "prompt": "Erstelle einen Wochenrückblick der letzten 7 Tage: erledigte, neue und blockierte Tickets je Person und Projekt, durchschnittliche Durchlaufzeit, Tickets ohne Bewegung seit über 5 Tagen.", "servers": ["jira", "atlassian"] },
+        { "title": "Pipeline-Gesundheit", "prompt": "Werte die CI/CD-Pipelines der letzten 14 Tage aus: Erfolgsquote je Projekt und Branch, häufigste fehlschlagende Jobs mit Ursache, durchschnittliche Dauer und Ausreißer.", "servers": ["gitlab", "github"] },
+        { "title": "Offene Reviews", "prompt": "Liste alle offenen Merge-/Pull-Requests mit Alter, Autor, Reviewern und Status der Pipeline. Markiere alles, was älter als 3 Tage ist oder Konflikte hat.", "servers": ["gitlab", "github"] },
+        { "title": "Fehler-Hotspots", "prompt": "Welche Fehler traten in den letzten 7 Tagen am häufigsten auf? Gruppiere nach Ursache/Komponente, nenne Anzahl, betroffene Nutzer und erste/letzte Sichtung.", "servers": ["sentry"] },
+        { "title": "Datenbank-Kennzahlen", "prompt": "Ermittle die wichtigsten Kennzahlen der Datenbank: größte Tabellen, Wachstum, langsame Abfragen (falls verfügbar). Nur lesende Abfragen verwenden.", "servers": ["postgres", "sqlite", "mssql"] }
+      ]
+    }
+  ]
+}

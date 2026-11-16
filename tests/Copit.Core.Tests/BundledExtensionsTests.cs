@@ -15,6 +15,7 @@ public class BundledExtensionsTests
     [Theory]
     [InlineData("copit-dotnet")]
     [InlineData("copit-obsidian")]
+    [InlineData("copit-mcp")]
     public void ManifestIsValid(string id)
     {
         var m = ExtensionService.ReadManifest(Dir(id));

@@ -32,6 +32,10 @@ public class AgentRequest
     public IReadOnlyList<ChatMessage> History { get; init; } = [];
     public string? ExtraArgs { get; init; }
     public IReadOnlyList<string> AdditionalDirs { get; init; } = [];
+    /// <summary>MCP-Konfigurationsdatei für diesen Lauf (Claude: --mcp-config).</summary>
+    public string? McpConfigPath { get; init; }
+    /// <summary>Nur die Server aus <see cref="McpConfigPath"/> verwenden, keine aus den Claude-Einstellungen (--strict-mcp-config).</summary>
+    public bool StrictMcpConfig { get; init; }
 }
 
 public interface IAgentRunner
