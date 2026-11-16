@@ -1,0 +1,111 @@
+{
+  "id": "copit-obsidian",
+  "name": "Copit Obsidian",
+  "version": "1.0.0",
+  "description": "Verkettet Agents, Tickets, Projekte, Applikationen, Services, API-Aufrufe, Endpunkte, externe Systeme und Werkzeuge als Notizen mit Frontmatter in deinem Obsidian-Vault – inkl. Tagesbericht und Vault-Kontext für Agents.",
+  "author": "Copit",
+  "homepage": "https://github.com/Copit-Code/Copit/tree/main/extensions/copit-obsidian",
+  "agentTemplates": [
+    {
+      "id": "vault-context",
+      "title": "{{ticket}} mit Vault-Kontext",
+      "description": "Lädt Projekt-, Ticket- und Architekturwissen aus Obsidian, bevor der Agent arbeitet",
+      "mode": "Edit",
+      "prompt": "Lade zuerst das Wissen aus dem Obsidian-Vault:\n`powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ext}}/scripts/context.ps1\" -Ticket \"{{ticket}}\" -Project \"{{project}}\"`\n\nBerücksichtige daraus die Projekt-Notiz, frühere Agents zu {{ticket}}, eigene Notizen und die Architektur (welche Services welche APIs/Systeme aufrufen und voneinander abhängen).\n\nArbeite dann an {{ticket}} im Projekt {{project}}. Nenne am Ende, welche Services, API-Aufrufe und Endpunkte du geändert hast – mit denselben Namen wie im Vault.",
+      "allowedTools": ["Bash(powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ext}}/scripts/context.ps1\":*)"]
+    },
+    {
+      "id": "describe-architecture",
+      "title": "Architektur für Obsidian beschreiben",
+      "description": "Agent beschreibt Applikationen und Services und ergänzt Beziehungen, danach wird der Vault aktualisiert",
+      "mode": "Edit",
+      "prompt": "Ziel: Die Architektur-Notizen im Obsidian-Vault sollen verständliche Beschreibungen und vollständige Verkettungen bekommen.\n\n1. Lies die automatisch erkannte Architektur:\n`powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ext}}/scripts/context.ps1\" -Project \"{{project}}\" -Architecture`\n2. Lies den Code der Applikationen und Services (nur lesen, nichts am Code ändern).\n3. Schreibe `.copit/obsidian/beschreibungen.md` im Format aus Schritt 1: je Applikation/Service 2–4 Sätze (Zweck, wichtigste Abläufe, Daten). Ergänze mit `Nutzt: …` Beziehungen, die die Analyse nicht erkennt (Events, Queues, Datenbanken, DI über Basisklassen, Konfiguration). Bestehende Abschnitte verbessern statt duplizieren.\n4. Aktualisiere den Vault:\n`powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ext}}/scripts/architecture.ps1\"`\n\nAm Ende: kurze Liste, was beschrieben und welche Beziehungen ergänzt wurden.",
+      "allowedTools": [
+        "Read", "Grep", "Glob",
+        "Write(.copit/obsidian/**)", "Edit(.copit/obsidian/**)", "MultiEdit(.copit/obsidian/**)",
+        "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ext}}/scripts/context.ps1\":*)",
+        "Bash(powershell -NoProfile -ExecutionPolicy Bypass -File \"{{ext}}/scripts/architecture.ps1\":*)"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "agent-note",
+      "label": "Agent-Notiz in Obsidian",
+      "description": "Notiz zum Agent-Lauf (Auftrag, Ergebnis, Kennzahlen, geänderte Dateien → Services) und aktualisiert Ticket-, Projekt- und Werkzeug-Notiz",
+      "run": "powershell -NoProfile -ExecutionPolicy Bypass -File \"{ext}/scripts/agent-note.ps1\"",
+      "params": [
+        { "key": "vault", "label": "Vault (leer = automatisch)", "placeholder": "C:\\Users\\ich\\Documents\\Vault" },
+        { "key": "folder", "label": "Ordner im Vault (leer = Copit)", "placeholder": "Copit" }
+      ],
+      "timeoutMinutes": 5
+    },
+    {
+      "id": "architecture",
+      "label": "Architektur nach Obsidian",
+      "description": "Applikationen, Services, API-Aufrufe, Endpunkte, Systeme und Werkzeuge des Repos als verkettete Notizen + Übersicht, Mermaid und Canvas",
+      "run": "powershell -NoProfile -ExecutionPolicy Bypass -File \"{ext}/scripts/architecture.ps1\"",
+      "params": [
+        { "key": "vault", "label": "Vault (leer = automatisch)", "placeholder": "C:\\Users\\ich\\Documents\\Vault" },
+        { "key": "folder", "label": "Ordner im Vault (leer = Copit)", "placeholder": "Copit" },
+        { "key": "repo", "label": "Repo (leer = Repo des Ereignisses)", "placeholder": "C:\\GIT\\mein-projekt" }
+      ],
+      "timeoutMinutes": 15
+    },
+    {
+      "id": "daily",
+      "label": "Tagesbericht in Obsidian",
+      "description": "Agents, Kosten, Tokens, Zeitbuchung und Projekt-Notizen des Tages in die Tagesnotiz",
+      "run": "powershell -NoProfile -ExecutionPolicy Bypass -File \"{ext}/scripts/daily.ps1\"",
+      "params": [
+        { "key": "date", "label": "Datum (leer = heute, \"gestern\" oder TT.MM.JJJJ)", "placeholder": "" },
+        { "key": "dailyNotes", "label": "In Tagesnotiz des Plugins schreiben (ja/nein)", "placeholder": "ja" },
+        { "key": "vault", "label": "Vault (leer = automatisch)", "placeholder": "" }
+      ],
+      "timeoutMinutes": 5
+    },
+    {
+      "id": "set-vault",
+      "label": "Obsidian-Vault festlegen",
+      "description": "Speichert Vault und Ordner dauerhaft (sonst wird der zuletzt geöffnete Vault verwendet)",
+      "run": "powershell -NoProfile -ExecutionPolicy Bypass -File \"{ext}/scripts/set-vault.ps1\"",
+      "params": [
+        { "key": "vault", "label": "Vault-Ordner (leer = zuletzt geöffneter)", "placeholder": "C:\\Users\\ich\\Documents\\Vault" },
+        { "key": "folder", "label": "Ordner im Vault", "placeholder": "Copit" }
+      ],
+      "timeoutMinutes": 1
+    }
+  ],
+  "automations": [
+    {
+      "id": "agent-finished-note",
+      "name": "Agent fertig → Obsidian-Notiz",
+      "trigger": "agent.finished",
+      "conditions": [],
+      "actions": [ { "type": "ext:copit-obsidian/agent-note", "params": { "vault": "", "folder": "" } } ]
+    },
+    {
+      "id": "agent-failed-note",
+      "name": "Agent fehlgeschlagen → Obsidian-Notiz",
+      "trigger": "agent.failed",
+      "conditions": [],
+      "actions": [ { "type": "ext:copit-obsidian/agent-note", "params": { "vault": "", "folder": "" } } ]
+    },
+    {
+      "id": "daily-report",
+      "name": "Feierabend → Tagesbericht in Obsidian",
+      "trigger": "schedule",
+      "triggerParams": { "time": "17:45", "days": "Mo,Di,Mi,Do,Fr" },
+      "conditions": [],
+      "actions": [ { "type": "ext:copit-obsidian/daily", "params": { "date": "", "dailyNotes": "ja" } } ]
+    },
+    {
+      "id": "push-architecture",
+      "name": "Push → Architektur in Obsidian aktualisieren",
+      "trigger": "git.push",
+      "conditions": [],
+      "actions": [ { "type": "ext:copit-obsidian/architecture", "params": { "vault": "", "folder": "", "repo": "" } } ]
+    }
+  ],
+  "permissions": []
+}
