@@ -42,14 +42,19 @@ public static class BudgetService
         return (DateTime.MinValue, DateTime.MaxValue, "Gesamt", "total");
     }
 
-    private static string Norm(string p) => Path.GetFullPath(p).TrimEnd('\\', '/').ToLowerInvariant();
+/// <summary>Pfade betriebssystemunabhängig vergleichen (Windows-Pfade auch auf der Linux-CI korrekt).</summary>
+    private static string Norm(string p)
+    {
+        var abs = System.Text.RegularExpressions.Regex.IsMatch(p, @"^[a-zA-Z]:[\\/]") || p.StartsWith('/') || p.StartsWith(@"\\") ? p : Path.GetFullPath(p);
+        return abs.Replace('\\', '/').TrimEnd('/').ToLowerInvariant();
+    }
 
     public static bool Covers(Budget b, string? path)
     {
         if (b.Folders.Count == 0) return true;
         if (string.IsNullOrWhiteSpace(path)) return false;
         var x = Norm(path);
-        return b.Folders.Any(f => { var n = Norm(f); return x == n || x.StartsWith(n + Path.DirectorySeparatorChar); });
+        return b.Folders.Any(f => { var n = Norm(f); return x == n || x.StartsWith(n + "/"); });
     }
 
     public static BudgetStatus Evaluate(Budget b, IEnumerable<UsageRecord> records, DateTime? now = null)

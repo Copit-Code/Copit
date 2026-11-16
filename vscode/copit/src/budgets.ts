@@ -29,14 +29,17 @@ export function isoWeek(d: Date): number {
   return Math.ceil(((t.getTime() - y.getTime()) / 86400000 + 1) / 7);
 }
 
-const norm = (p: string) => path.resolve(p).toLowerCase().replace(/[\\/]+$/, "");
+// Pfade betriebssystemunabhängig vergleichen (Windows-Pfade auch auf der Linux-CI korrekt)
+const norm = (p: string) =>
+  (/^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\") ? p : path.resolve(p))
+    .replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
 /** Zählt ein Pfad zu einem Budget? (Ordner selbst oder darunter; leere Liste = alle) */
 export function budgetCovers(b: Budget, p: string | undefined): boolean {
   if (!b.folders.length) return true;
   if (!p) return false;
   const x = norm(p);
-  return b.folders.some((f) => { const n = norm(f); return x === n || x.startsWith(n + path.sep); });
+  return b.folders.some((f) => { const n = norm(f); return x === n || x.startsWith(n + "/"); });
 }
 
 export function evaluate(b: Budget, records: UsageRecord[], now = new Date()): BudgetStatus {

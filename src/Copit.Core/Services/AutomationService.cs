@@ -116,7 +116,7 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
             "equals" => v == x,
             "not_equals" => v != x,
             "contains" => v.Contains(x),
-            "matches" => SafeRegex(c.Value, raw),
+            "matches" => SafeRegex(c.Value ?? "", raw),
             _ => false,
         };
     }
