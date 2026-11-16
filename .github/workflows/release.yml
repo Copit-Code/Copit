@@ -90,6 +90,12 @@ jobs:
     needs: [windows, extension]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Release-Notes suchen
+        id: notes
+        run: |
+          T="${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}"
+          if [ -f "docs/releases/$T.md" ]; then echo "path=docs/releases/$T.md" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -100,4 +106,5 @@ jobs:
           name: Copit ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
           draft: ${{ github.ref_type != 'tag' }}
           files: dist/*
+          body_path: ${{ steps.notes.outputs.path }}
           generate_release_notes: true

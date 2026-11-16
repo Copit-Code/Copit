@@ -1,7 +1,7 @@
 # Copit-Extensions
 
-Extensions erweitern Copit um **Agent-Vorlagen**, **Automations-Aktionen** (Skripte), **Automations-Rezepte** und
-**Permission-Regeln**. Sie liegen in einem GitHub-Repository und werden von Copit installiert und automatisch aktualisiert.
+Extensions erweitern Copit um **Agent-Vorlagen**, **Automations-Aktionen** (Skripte), **Automations-Rezepte**,
+**Permission-Regeln** und **eigene Tools** (eigener Eintrag in der Navigation). Sie liegen in einem GitHub-Repository und werden von Copit installiert und automatisch aktualisiert.
 
 ## Installieren
 
@@ -17,7 +17,13 @@ In Copit → **Extensions** eine Quelle eingeben:
 Öffentliche Repositories funktionieren ohne Anmeldung. Private brauchen einen GitHub-Token mit „Contents: Read-only“ (Copit → Customize → Updates).
 Zum Entwickeln: **Lokaler Ordner…** – „Neu laden“ übernimmt Änderungen.
 
-Beispiel aus diesem Repo: `Copit-Code/Copit/extensions/copit-dotnet`
+Mitgelieferte Extensions in diesem Repo:
+
+| Quelle | Inhalt |
+|---|---|
+| `Copit-Code/Copit/extensions/copit-dotnet` | Agent-Vorlagen und `dotnet test` als Aktion |
+| `Copit-Code/Copit/extensions/copit-obsidian` | Verketteter Wissensgraph im Obsidian-Vault: Agents, Tickets, Projekte, Architektur (Apps, Services, API-Aufrufe, Systeme), Tagesbericht, Vault-Kontext für Agents ([README](../extensions/copit-obsidian/README.md)) |
+| `Copit-Code/Copit/extensions/copit-mcp` | Tool „MCP-Auswertung“: MCP-Server bewusst auswählen und Auswertungen prompten ([README](../extensions/copit-mcp/README.md)) |
 
 ## Aufbau
 
@@ -71,7 +77,8 @@ meine-extension/
 | Feld | Bedeutung |
 |---|---|
 | `id` | eindeutig, `a-z 0-9 - .` – Ordnername unter `%LOCALAPPDATA%\Copit\extensions` |
-| `agentTemplates` | erscheinen in **Agents → Neuer Agent → Vorlage**; Platzhalter `{{ticket}}`, `{{project}}`, `{{branch}}`; `mode`: Ask, Plan, Edit, Auto |
+| `agentTemplates` | erscheinen in **Agents → Neuer Agent → Vorlage**; Platzhalter `{{ticket}}`, `{{project}}`, `{{branch}}`, `{{ext}}` (Extension-Ordner, auch in `allowedTools`); `mode`: Ask, Plan, Edit, Auto |
+| `tools` | eigene Tools mit Navigationseintrag; Art `mcp-prompt`: MCP-Server auswählen + Auswertung prompten (`systemPrompt`, `presets`, `placeholder`, `readFiles`, `icon`) |
 | `actions` | erscheinen im **Automation-Builder** unter dem Namen der Extension (Typ `ext:<id>/<aktion>`) |
 | `automations` | werden **deaktiviert** übernommen – im Builder prüfen und einschalten |
 | `permissions` | werden nach Rückfrage als Copit-Regeln übernommen (`Allow`, `Ask`, `Deny`) |
@@ -85,7 +92,7 @@ meine-extension/
 |---|---|
 | `COPIT_EXT_DIR`, `COPIT_REPO` | Extension-Ordner, Repository |
 | `COPIT_PARAM_<KEY>` | Parameter der Aktion aus dem Builder (Platzhalter wie `{{ticket}}` schon ersetzt) |
-| `COPIT_VAR_<NAME>` | Variablen des Ereignisses: `TITLE`, `TICKET`, `BRANCH`, `STATUS`, `SUMMARY`, `PROJECT`, `REPO`, `COST`, … |
+| `COPIT_VAR_<NAME>` | Variablen des Ereignisses: `TITLE`, `TICKET`, `BRANCH`, `STATUS`, `SUMMARY`, `PROJECT`, `REPO`, `COST`, bei Agents zusätzlich `AGENTID`, `PROJECTID`, `MODEL`, `MODE`, `BASESHA`, `TOKENS`, `OUTPUTTOKENS`, `TURNS`, `AGENTMINUTES`, `AIMINUTES`, `TOOLMINUTES`, `LINESADDED`, `LINESREMOVED`, `CREATED`, `PROMPT` |
 
 Exit-Code ≠ 0 gilt als Fehler. Die letzten Zeilen der Ausgabe stehen im Automations-Protokoll.
 
