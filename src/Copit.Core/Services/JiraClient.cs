@@ -345,6 +345,7 @@ public class JiraClient
     public async Task<string> CreateIssueAsync(string projectKey, string summary, string description, string issueType,
         double estimateHours, string? epicKey, CancellationToken ct = default, string? account = null)
     {
+        LastCreateNotes.Clear();
         if (!string.IsNullOrWhiteSpace(account) && !string.IsNullOrWhiteSpace(_s.AccountFieldId))
         {
             // Tempo-Account-Feld: je nach Version als ID-Zahl, {id} oder Key – nacheinander probieren
@@ -389,8 +390,66 @@ public class JiraClient
             else fields["parent"] = new JsonObject { ["key"] = epicKey };
         }
         if (extra is { } x) fields[x.Field] = x.Value?.DeepClone();
-        var node = await PostAsync("rest/api/2/issue", new JsonObject { ["fields"] = fields }, ct);
-        return node.Str("key");
+
+        // Felder, die nicht auf der Anlege-Maske stehen, weglassen und erneut versuchen – danach nachtragen
+        var optional = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "description", "timetracking", "parent" };
+        if (!string.IsNullOrWhiteSpace(_s.EpicLinkFieldId)) optional.Add(_s.EpicLinkFieldId);
+        var dropped = new Dictionary<string, JsonNode?>(StringComparer.OrdinalIgnoreCase);
+        JsonNode? node = null;
+        for (var attempt = 0; ; attempt++)
+        {
+            try { node = await PostAsync("rest/api/2/issue", new JsonObject { ["fields"] = fields.DeepClone() }, ct); break; }
+            catch (ApiException e) when (e.StatusCode == 400 && attempt < 4)
+            {
+                var bad = UnsettableFields(e.Message).Where(f => optional.Contains(f) && fields.ContainsKey(f)).ToList();
+                if (bad.Count == 0) throw;
+                foreach (var f in bad) { dropped[f] = fields[f]?.DeepClone(); fields.Remove(f); }
+            }
+        }
+        var key = node.Str("key");
+        if (dropped.Count > 0) await RestoreDroppedFieldsAsync(key, dropped, description, estimateHours, epicKey, ct);
+        return key;
+    }
+
+    /// <summary>Hinweise zum letzten angelegten Ticket (z. B. Beschreibung als Kommentar nachgetragen).</summary>
+    public List<string> LastCreateNotes { get; } = [];
+
+    /// <summary>Feldnamen aus einer Jira-400-Antwort, die auf der Maske fehlen („cannot be set … not on the appropriate screen, or unknown“).</summary>
+    public static List<string> UnsettableFields(string message)
+    {
+        var start = message.IndexOf('{');
+        if (start < 0) return [];
+        try
+        {
+            var errors = JsonNode.Parse(message[start..])?["errors"] as JsonObject;
+            return errors == null ? [] : [.. errors
+                .Where(e => (e.Value?.ToString() ?? "") is var m && (m.Contains("cannot be set", StringComparison.OrdinalIgnoreCase) || m.Contains("appropriate screen", StringComparison.OrdinalIgnoreCase)))
+                .Select(e => e.Key)];
+        }
+        catch { return []; }
+    }
+
+    /// <summary>Weggelassene Felder per Bearbeiten nachtragen; Beschreibung notfalls als Kommentar, damit nichts verloren geht.</summary>
+    private async Task RestoreDroppedFieldsAsync(string key, Dictionary<string, JsonNode?> dropped, string description, double estimateHours, string? epicKey, CancellationToken ct)
+    {
+        foreach (var (field, value) in dropped)
+        {
+            try
+            {
+                await SendJsonAsync(HttpMethod.Put, $"rest/api/2/issue/{Uri.EscapeDataString(key)}", new JsonObject { ["fields"] = new JsonObject { [field] = value?.DeepClone() } }, ct);
+                LastCreateNotes.Add(field switch { "description" => "Beschreibung nachträglich gesetzt", "timetracking" => "Schätzung nachträglich gesetzt", _ => $"{field} nachträglich gesetzt" });
+            }
+            catch (ApiException)
+            {
+                if (field == "description" && !string.IsNullOrWhiteSpace(description))
+                {
+                    try { await AddCommentAsync(key, description, ct); LastCreateNotes.Add("Beschreibung ist in Jira nicht erlaubt – als Kommentar eingetragen"); }
+                    catch { LastCreateNotes.Add("Beschreibung konnte nicht gesetzt werden"); }
+                }
+                else if (field == "timetracking") LastCreateNotes.Add($"Schätzung ({FormatEstimate(estimateHours)}) ist in Jira nicht erlaubt – nicht gesetzt");
+                else LastCreateNotes.Add($"Epic {epicKey} konnte nicht verknüpft werden – bitte in Jira zuordnen");
+            }
+        }
     }
 
     public static string FormatEstimate(double hours)

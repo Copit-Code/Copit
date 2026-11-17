@@ -51,3 +51,59 @@ public class WorklogAccountTests
         Assert.Equal((8.0, 0.0, 0.0), (h.WithAccount, h.WithoutAccount, h.Unknown));
     }
 }
+
+public class CreateIssueFieldTests
+{
+    [Fact]
+    public void FindsFieldsNotOnScreen()
+    {
+        var msg = """HTTP 400 Bad Request: {"errorMessages":[],"errors":{"description":"Field 'description' cannot be set. It is not on the appropriate screen, or unknown.","timetracking":"Field 'timetracking' cannot be set. It is not on the appropriate screen, or unknown.","summary":"You must specify a summary of the issue."}}""";
+        Assert.Equal(["description", "timetracking"], JiraClient.UnsettableFields(msg));
+        Assert.Empty(JiraClient.UnsettableFields("HTTP 400: kein JSON"));
+        Assert.Empty(JiraClient.UnsettableFields("""HTTP 400: {"errors":{"summary":"required"}}"""));
+    }
+}
+
+public class CreateIssueRetryTests
+{
+    [Fact]
+    public async Task DropsFieldsNotOnScreenAndAddsDescriptionAsComment()
+    {
+        // Mini-Jira: Anlege-Maske ohne description, Bearbeiten-Maske ebenfalls ohne → Kommentar
+        var port = new Random().Next(30000, 40000);
+        using var http = new System.Net.HttpListener();
+        http.Prefixes.Add($"http://127.0.0.1:{port}/");
+        http.Start();
+        var calls = new List<string>();
+        var server = Task.Run(async () =>
+        {
+            for (var i = 0; i < 4; i++)
+            {
+                var ctx = await http.GetContextAsync();
+                var body = await new StreamReader(ctx.Request.InputStream).ReadToEndAsync();
+                calls.Add($"{ctx.Request.HttpMethod} {ctx.Request.Url!.AbsolutePath} {body}");
+                string reply; int code;
+                if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url.AbsolutePath.EndsWith("/issue") && body.Contains("\"description\""))
+                { code = 400; reply = """{"errorMessages":[],"errors":{"description":"Field 'description' cannot be set. It is not on the appropriate screen, or unknown."}}"""; }
+                else if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url.AbsolutePath.EndsWith("/issue")) { code = 201; reply = """{"id":"1","key":"SHOP-9"}"""; }
+                else if (ctx.Request.HttpMethod == "PUT") { code = 400; reply = """{"errors":{"description":"Field 'description' cannot be set."}}"""; }
+                else { code = 201; reply = """{"id":"5"}"""; }
+                ctx.Response.StatusCode = code;
+                var bytes = System.Text.Encoding.UTF8.GetBytes(reply);
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.OutputStream.WriteAsync(bytes);
+                ctx.Response.Close();
+            }
+        });
+        var jira = new JiraClient(new JiraSettings { BaseUrl = $"http://127.0.0.1:{port}" }, "token");
+        var key = await jira.CreateIssueAsync("SHOP", "Neue Funktion", "Beschreibung mit Details", "Task", 0, null);
+        await server;
+        Assert.Equal("SHOP-9", key);
+        Assert.Equal(4, calls.Count);
+        Assert.DoesNotContain("\"description\"", calls[1]);                         // zweiter Versuch ohne Beschreibung
+        Assert.StartsWith("PUT /rest/api/2/issue/SHOP-9", calls[2]);
+        Assert.StartsWith("POST /rest/api/2/issue/SHOP-9/comment", calls[3]);
+        Assert.Contains("Beschreibung mit Details", calls[3]);
+        Assert.Contains(jira.LastCreateNotes, n => n.Contains("als Kommentar"));
+    }
+}

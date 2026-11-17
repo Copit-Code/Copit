@@ -740,7 +740,10 @@ public partial class TimeViewModel : ObservableObject, IActivatable
             OnPropertyChanged(nameof(HasUnassigned)); OnPropertyChanged(nameof(CanBook));
             await _data.Days.SaveAsync();
             LoadMemory();
-            _toast.Success($"{issue.Key} angelegt", $"Task in {epic}{(issue.Account != null ? $" · Account {issue.Account}" : "")}");
+            var info = $"Task in {epic}{(issue.Account != null ? $" · Account {issue.Account}" : "")}";
+            var notes = _hub.Jira?.LastCreateNotes ?? [];
+            if (notes.Count > 0) _toast.Show($"{issue.Key} angelegt", info + " · " + string.Join(" · ", notes), NoticeLevel.Warning);
+            else _toast.Success($"{issue.Key} angelegt", info);
         }
         catch (Exception e) { _toast.Error(e, "Task anlegen"); }
     }
