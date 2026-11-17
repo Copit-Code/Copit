@@ -315,25 +315,46 @@
                                     <HorizontalStackLayout Spacing="8">
                                         <c:Icon Name="question" Size="15" Color="{StaticResource Accent}" />
                                         <Label Text="{Binding Text}" FontAttributes="Bold" FontSize="13" LineBreakMode="WordWrap" />
+                                        <c:Icon Name="check" Size="13" Color="{StaticResource Accent}" IsVisible="{Binding IsAnswered}" />
                                     </HorizontalStackLayout>
                                     <FlexLayout Wrap="Wrap" BindableLayout.ItemsSource="{Binding Options}">
                                         <BindableLayout.ItemTemplate>
                                             <DataTemplate>
-                                                <Button Text="{Binding .}" Margin="0,0,6,6"
-                                                        Command="{Binding Source={x:Reference Root}, Path=BindingContext.AnswerCommand}" CommandParameter="{Binding .}" />
+                                                <Border Margin="0,0,6,6" Padding="12,6" StrokeThickness="1" Stroke="{StaticResource Text2}" BackgroundColor="Transparent">
+                                                    <Border.Triggers>
+                                                        <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="BackgroundColor" Value="{StaticResource Accent}" />
+                                                            <Setter Property="Stroke" Value="{StaticResource Accent}" />
+                                                        </DataTrigger>
+                                                    </Border.Triggers>
+                                                    <Border.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.AnswerCommand}" CommandParameter="{Binding .}" />
+                                                    </Border.GestureRecognizers>
+                                                    <Label Text="{Binding Text}" FontSize="12.5" TextColor="{StaticResource Text}">
+                                                        <Label.Triggers>
+                                                            <DataTrigger TargetType="Label" Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="TextColor" Value="{StaticResource Bg}" />
+                                                                <Setter Property="FontAttributes" Value="Bold" />
+                                                            </DataTrigger>
+                                                        </Label.Triggers>
+                                                    </Label>
+                                                </Border>
                                             </DataTemplate>
                                         </BindableLayout.ItemTemplate>
                                     </FlexLayout>
-                                    <Label Text="EIGENE ANTWORT" Style="{StaticResource Caption}" TextColor="{StaticResource Accent}">
-                                        <Label.GestureRecognizers>
-                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.AnswerFreeTextCommand}" CommandParameter="{Binding .}" />
-                                        </Label.GestureRecognizers>
-                                    </Label>
+                                    <Entry Text="{Binding Answer, Mode=TwoWay}" Placeholder="Eigene Antwort…" FontSize="12.5"
+                                           ReturnCommand="{Binding Source={x:Reference Root}, Path=BindingContext.SendAnswersCommand}" />
                                 </VerticalStackLayout>
                             </Border>
                         </DataTemplate>
                     </BindableLayout.ItemTemplate>
                 </VerticalStackLayout>
+
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding Host.Questions.Count, Converter={StaticResource Any}, FallbackValue=False}">
+                    <Label Text="Offene Fragen entscheidet der Agent selbst." Style="{StaticResource Caption}" VerticalOptions="Center"
+                           IsVisible="{Binding Host.HasSeveralQuestions, FallbackValue=False}" />
+                    <Button Grid.Column="1" Text="{Binding Host.SendAnswersText}" Style="{StaticResource Primary}" Command="{Binding SendAnswersCommand}" />
+                </Grid>
 
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" IsVisible="{Binding Host.IsRunning, FallbackValue=False}">
                     <c:AiOrb WidthRequest="16" HeightRequest="16" IsActive="True" />
