@@ -68,6 +68,8 @@ public partial class MainPage : ContentPage
             shell.StartClock();
             var mgr = sp.GetRequiredService<SessionManager>(); // verbindet Agents mit dem Automations-Motor
             mgr.Warn += (t, m) => toasts.Show(t, m, NoticeLevel.Warning);
+            mgr.DeliveryNotice += n => MainThread.BeginInvokeOnMainThread(() => toasts.Show(n.Title, n.Message, n.Level, n.Action, n.ActionArg));
+            mgr.StartDeliveryWatch();
             automations.DocsUpdater = async (repo, ai, commit) =>
             {
                 var project = data.Projects.Value.Projects.FirstOrDefault(p => string.Equals(p.SourceFolder.TrimEnd('\\', '/'), repo.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))

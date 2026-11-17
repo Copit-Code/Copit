@@ -251,6 +251,8 @@
 
             <!-- Status, Rückfragen, Berechtigungen, Plan -->
             <VerticalStackLayout Grid.Row="3" Padding="28,0" Spacing="8" MaximumWidthRequest="1036">
+                <!-- Lieferstatus: committet? gepusht? Pipeline? Ticket fertig? -->
+                <v:DeliveryPanel Host="{Binding Host}" />
                 <Border Style="{StaticResource PanelBox}" Stroke="#5A4520" IsVisible="{Binding Host.Interrupted, FallbackValue=False}">
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                         <c:Icon Name="alert" Size="15" Color="{StaticResource Amber}" />

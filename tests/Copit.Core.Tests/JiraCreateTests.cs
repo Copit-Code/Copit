@@ -198,3 +198,41 @@ public class TempoAccountFieldTests
         Assert.DoesNotContain(jira.Calls, c => c.StartsWith("POST /rest/api/2/issue"));
     }
 }
+
+public class TempoWorklogAccountTests
+{
+    [Fact]
+    public async Task WorklogUsesTempoAccountKeyEvenIfTicketShowsName()
+    {
+        const string accounts = """[ { "id": 140896, "key": "100_26980_3800_140896", "name": "26980_Kostenstellenaufträge 2026", "status": "OPEN" } ]""";
+        using var jira = new FakeJira((method, path, body) => (method, path) switch
+        {
+            ("GET", var p) when p.StartsWith("/rest/api/2/myself") => (200, """{"key":"JIRAUSER1","name":"fabian"}"""),
+            ("GET", var p) when p.StartsWith("/rest/tempo-accounts/1/account") => (200, accounts),
+            // Tempo kennt nur den Key – mit dem Namen kommt „account … null“
+            ("POST", "/rest/tempo-timesheets/4/worklogs/") when body.Contains("\"value\":\"100_26980_3800_140896\"") =>
+                (200, """[{"tempoWorklogId":7,"attributes":{"_Account_":{"value":"100_26980_3800_140896"}}}]"""),
+            ("POST", "/rest/tempo-timesheets/4/worklogs/") => (400, """{"errors":{"_Account_":"Account id is null"}}"""),
+            _ => (404, "{}"),
+        });
+        var client = jira.Client(new JiraSettings { UseTempo = true });
+        var booked = await client.AddWorklogAsync("ST-1", DateTime.Today.AddHours(9), 3600, "Test", "26980_Kostenstellenaufträge 2026");
+        Assert.Equal("100_26980_3800_140896", booked);
+    }
+
+    [Fact]
+    public async Task TempoErrorIsShownReadable()
+    {
+        using var jira = new FakeJira((method, path, _) => (method, path) switch
+        {
+            ("GET", var p) when p.StartsWith("/rest/api/2/myself") => (200, """{"key":"JIRAUSER1","name":"fabian"}"""),
+            ("GET", var p) when p.StartsWith("/rest/tempo-accounts/1/account") => (200, "[]"),
+            ("POST", "/rest/tempo-timesheets/4/worklogs/") => (400, """{"errors":{"_Account_":"Account id is null"}}"""),
+            _ => (404, "{}"),
+        });
+        var e = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            jira.Client(new JiraSettings { UseTempo = true }).AddWorklogAsync("ST-1", DateTime.Today, 3600, "x", "GIBTSNICHT"));
+        Assert.Contains("Tempo lehnt die Buchung auf ST-1 ab", e.Message);
+        Assert.Contains("Account id is null", e.Message);
+    }
+}

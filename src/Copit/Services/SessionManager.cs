@@ -20,16 +20,17 @@ public class SessionManager : IAgentOps
     public AutomationService Automations { get; }
     public ActivityService Activity { get; }
     public GitService Git { get; }
+    public DeliveryService Delivery { get; }
 
     public event Action? RunningChanged;
     /// <summary>Status, Zeiten oder Liste der Agents haben sich geändert (Board neu zeichnen).</summary>
     public event Action? AgentsChanged;
 
     public SessionManager(SessionStore store, AgentRunnerFactory runners, SettingsService settings, DataService data,
-        PermissionService permissions, AutomationService automations, ActivityService activity, GitService git)
+        PermissionService permissions, AutomationService automations, ActivityService activity, GitService git, DeliveryService delivery)
     {
         _store = store; _runners = runners; _settings = settings; _data = data;
-        Permissions = permissions; Automations = automations; Activity = activity; Git = git;
+        Permissions = permissions; Automations = automations; Activity = activity; Git = git; Delivery = delivery;
         automations.Agents = this;
         // Läufe, die beim Beenden noch liefen, als unterbrochen markieren
         foreach (var s in store.All.Where(s => s.Status is AgentStatus.InProgress or AgentStatus.WaitingSubagent))
@@ -53,6 +54,68 @@ public class SessionManager : IAgentOps
             if (e.PropertyName is nameof(SessionHost.IsRunning) or nameof(SessionHost.BoardStatus)) RaiseAgentsChanged();
         };
         return _hosts[s.Id] = h;
+    }
+
+    // ------------------------------------------------------------ Lieferstatus (Commit → Push → MR → Pipeline → Jira)
+
+    private readonly Dictionary<string, TicketDelivery> _deliveries = [];
+    private readonly HashSet<string> _deliveryBusy = [];
+    private CancellationTokenSource? _deliveryLoop;
+
+    /// <summary>Zuletzt ermittelter Lieferstatus eines Agents (null = noch nicht geprüft / kein Repo).</summary>
+    public TicketDelivery? DeliveryOf(ChatSession a) { lock (_deliveries) return _deliveries.GetValueOrDefault(a.Id); }
+
+    /// <summary>Lieferstatus neu ermitteln. Meldet Wechsel der Pipeline (fertig/fehlgeschlagen) als Hinweis.</summary>
+    public async Task<TicketDelivery?> RefreshDeliveryAsync(ChatSession a, CancellationToken ct = default)
+    {
+        lock (_deliveryBusy) if (!_deliveryBusy.Add(a.Id)) return DeliveryOf(a);
+        try
+        {
+            var project = _data.Project(a.ProjectId);
+            var d = await Delivery.CheckAsync(a, RepoOf(a), string.IsNullOrWhiteSpace(project?.GitLabProject) ? null : project!.GitLabProject, ct);
+            TicketDelivery? old;
+            lock (_deliveries) { old = _deliveries.GetValueOrDefault(a.Id); if (d != null) _deliveries[a.Id] = d; else _deliveries.Remove(a.Id); }
+            var before = old?.Step("pipeline")?.State; var after = d?.Step("pipeline")?.State;
+            if (old != null && before == StepState.Running && after is StepState.Ok or StepState.Fail)
+                DeliveryNotice?.Invoke(new Notice(after == StepState.Ok ? $"Pipeline grün · {a.Ticket ?? a.Title}" : $"Pipeline fehlgeschlagen · {a.Ticket ?? a.Title}",
+                    d!.Step("pipeline")!.Detail, after == StepState.Ok ? NoticeLevel.Success : NoticeLevel.Error, "agent", a.Id));
+            if (old?.Headline != d?.Headline || old?.Overall != d?.Overall) DeliveryChanged?.Invoke(a.Id);
+            return d;
+        }
+        catch (Exception e) { App.LogCrash(e); return DeliveryOf(a); }
+        finally { lock (_deliveryBusy) _deliveryBusy.Remove(a.Id); }
+    }
+
+    public event Action<string>? DeliveryChanged;
+    public event Action<Notice>? DeliveryNotice;
+
+    /// <summary>Hintergrund: Lieferstatus von Karten mit Branch regelmäßig prüfen – schneller, solange eine Pipeline läuft.</summary>
+    public void StartDeliveryWatch()
+    {
+        if (_deliveryLoop != null) return;
+        _deliveryLoop = new CancellationTokenSource();
+        var ct = _deliveryLoop.Token;
+        _ = Task.Run(async () =>
+        {
+            var lastFull = DateTime.MinValue;
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    var full = DateTime.Now - lastFull > TimeSpan.FromMinutes(3);
+                    if (full) lastFull = DateTime.Now;
+                    var candidates = Agents
+                        .Where(a => !(_hosts.TryGetValue(a.Id, out var h) && h.IsRunning) && (a.Branch != null || a.Ticket != null) && a.Status is AgentStatus.Review or AgentStatus.Done or AgentStatus.InProgress or AgentStatus.NeedInput)
+                        .Where(a => full || DeliveryOf(a)?.IsPending == true)
+                        .OrderByDescending(a => a.UpdatedAt).Take(12).ToList();
+                    foreach (var a in candidates) { if (ct.IsCancellationRequested) break; await RefreshDeliveryAsync(a, ct); }
+                    if (candidates.Count > 0) RaiseAgentsChanged();
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception e) { App.LogCrash(e); }
+                try { await Task.Delay(TimeSpan.FromSeconds(30), ct); } catch { break; }
+            }
+        }, ct);
     }
 
     public void RaiseAgentsChanged() => MainThread.BeginInvokeOnMainThread(() => AgentsChanged?.Invoke());
@@ -434,6 +497,22 @@ public partial class SessionHost : ObservableObject
         RestoreQuestions();
     }
 
+    public SessionManager Manager => _mgr;
+
+    /// <summary>Verbrauch eines Laufs für die „Fertig“-Zeile – bei Copilot sieht man so direkt, ob die Zahlen ankommen.</summary>
+    private string UsageText(AgentResult r)
+    {
+        var parts = new List<string>();
+        if (r.Usage is { } u)
+            parts.Add($"↑ {Fmt(u.Input + u.CacheRead + u.CacheWrite)}{(u.CacheRead > 0 ? $" ({Fmt(u.CacheRead)} Cache)" : "")} ↓ {Fmt(u.Output)} Tokens");
+        if (r.PremiumRequests > 0) parts.Add($"{r.PremiumRequests:0.##} Premium");
+        if (r.AiCredits > 0) parts.Add($"{r.AiCredits:0.##} AI Credits");
+        if (r.CostUsd > 0) parts.Add($"${r.CostUsd:0.000}");
+        else if (Provider == AiProvider.Copilot && r.UsageReported && (r.PremiumRequests > 0 || r.AiCredits > 0)) parts.Add("Preis in Einstellungen → KI setzen");
+        if (Provider == AiProvider.Copilot && !r.UsageReported) parts.Add("keine Nutzungsdaten von Copilot erhalten");
+        return parts.Count == 0 ? "" : " · " + string.Join(" · ", parts);
+    }
+
     /// <summary>Spalte auf dem Board. Manuelles Verschieben löst agent.moved aus.</summary>
     public AgentStatus BoardStatus
     {
@@ -450,6 +529,8 @@ public partial class SessionHost : ObservableObject
                 ["to"] = value.ToString(), ["from"] = from.ToString(),
                 ["toTitle"] = AgentStatusInfo.Title(value), ["fromTitle"] = AgentStatusInfo.Title(from),
             });
+            // Automationen (z. B. Push) laufen im Hintergrund – danach Lieferstatus neu prüfen
+            _ = Task.Run(async () => { await Task.Delay(6000); await _mgr.RefreshDeliveryAsync(Session); _mgr.RaiseAgentsChanged(); });
         }
     }
 
@@ -746,6 +827,7 @@ public partial class SessionHost : ObservableObject
             if (lastText.Length > 0) Session.Summary = QuestionParser.Extract(lastText).CleanText is var c && c.Length > 600 ? c[..600] + "…" : QuestionParser.Extract(lastText).CleanText;
             IsRunning = false;
             Status = "";
+            _ = _mgr.RefreshDeliveryAsync(Session);
             // Board-Status nach dem Lauf
             if (run.Ok == false && Session.Error != null && !Session.Error.StartsWith("Abgebrochen")) { SetStatusSilently(AgentStatus.Failed); _mgr.Emit("agent.failed", Session); }
             else if (Session.Error == "Abgebrochen") { SetStatusSilently(AgentStatus.Review); _mgr.Emit("agent.stopped", Session); }
@@ -900,7 +982,7 @@ public partial class SessionHost : ObservableObject
                     if (qs.Count > 0) { foreach (var q in qs) AddQuestion(q); }
                 }
                 if (r.DurationMs > 0)
-                    AddSystem($"Fertig in {TimeSpan.FromMilliseconds(r.DurationMs):m\\:ss} · {r.Turns} Schritte{(r.CostUsd > 0 ? $" · ${r.CostUsd:0.000}" : "")}");
+                    AddSystem($"Fertig in {TimeSpan.FromMilliseconds(r.DurationMs):m\\:ss} · {r.Turns} Schritte{UsageText(r)}");
                 break;
         }
     }

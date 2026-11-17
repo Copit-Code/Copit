@@ -27,6 +27,7 @@ public class BoardView : ContentView, IActivatable
         BackgroundColor = C("Bg");
         Content = new Grid { Children = { _root, _overlay } };
         mgr.AgentsChanged += () => { if (_visible) Render(); };
+        mgr.DeliveryChanged += _ => MainThread.BeginInvokeOnMainThread(() => { if (_visible) Render(); });
         nav.Navigated += (r, _) => { _visible = r == Routes.Board; if (!_visible) _timer?.Stop(); };
     }
 
@@ -142,6 +143,8 @@ public class BoardView : ContentView, IActivatable
 
         var body = Stack(6, top, sub);
         if (meta.Children.Count > 0) body.Add(meta);
+        // Lieferstatus: committet → gepusht → MR → Pipeline → Jira
+        if (_mgr.DeliveryOf(a) is { } delivery) body.Add(DeliveryUi.CardLine(delivery));
 
         if (h.IsRunning)
         {

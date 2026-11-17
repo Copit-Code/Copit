@@ -253,6 +253,7 @@ public class JiraClient
     {
         if (string.IsNullOrWhiteSpace(w.TempoId)) throw new InvalidOperationException("Diese Buchung ist in Tempo nicht bekannt – Account bitte direkt in Tempo nachtragen.");
         var me = await GetMyselfAsync(ct);
+        var key = await TempoAccountKeyAsync(account, ct);
         var body = new
         {
             worker = string.IsNullOrEmpty(me.Key) ? me.Name : me.Key,
@@ -261,14 +262,16 @@ public class JiraClient
             timeSpentSeconds = w.TimeSpentSeconds,
             billableSeconds = w.TimeSpentSeconds,
             comment = w.Comment,
-            attributes = new Dictionary<string, object> { [_s.TempoAccountAttributeKey] = new { value = account.Trim() } },
+            attributes = new Dictionary<string, object> { [_s.TempoAccountAttributeKey] = new { value = key } },
         };
-        var res = await SendJsonAsync(HttpMethod.Put, $"rest/tempo-timesheets/4/worklogs/{Uri.EscapeDataString(w.TempoId)}", body, ct);
+        JsonNode? res;
+        try { res = await SendJsonAsync(HttpMethod.Put, $"rest/tempo-timesheets/4/worklogs/{Uri.EscapeDataString(w.TempoId)}", body, ct); }
+        catch (ApiException e) { throw new InvalidOperationException($"Tempo lehnt den Account {key} ab: {JiraErrorText(e.Message)}"); }
         var booked = (res as JsonArray)?.FirstOrDefault() ?? res;
         var attr = booked?["attributes"]?[_s.TempoAccountAttributeKey];
-        var actual = attr == null ? (booked?["attributes"] == null ? account.Trim() : null) : ReadAccount(attr["value"] ?? attr);
-        if (!string.Equals(actual, account.Trim(), StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Tempo hat den Account \"{account}\" nicht übernommen (jetzt: \"{actual ?? "keiner"}\").");
+        var actual = attr == null ? (booked?["attributes"] == null ? key : null) : ReadAccount(attr["value"] ?? attr);
+        if (!string.Equals(actual, key, StringComparison.OrdinalIgnoreCase) && !string.Equals(actual, account.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Tempo hat den Account \"{key}\" nicht übernommen (jetzt: \"{actual ?? "keiner"}\").");
         w.Account = actual; w.AccountChecked = true;
         return actual!;
     }
@@ -303,12 +306,15 @@ public class JiraClient
         if (_s.UseTempo || !string.IsNullOrWhiteSpace(account))
         {
             var me = await GetMyselfAsync(ct);
+            var worker = string.IsNullOrEmpty(me.Key) ? me.Name : me.Key;
+            if (string.IsNullOrWhiteSpace(worker)) throw new InvalidOperationException("Jira liefert keinen Benutzer-Key für dich (myself) – Buchung über Tempo nicht möglich. Token/Berechtigung prüfen.");
+            // Tempo erwartet im Account-Attribut den Account-KEY. Am Ticket steht oft nur Name oder ID → auflösen.
+            var accKey = string.IsNullOrWhiteSpace(account) ? null : await TempoAccountKeyAsync(account, ct);
             var attributes = new Dictionary<string, object>();
-            if (!string.IsNullOrWhiteSpace(account))
-                attributes[_s.TempoAccountAttributeKey] = new { value = account.Trim() };
+            if (accKey != null) attributes[_s.TempoAccountAttributeKey] = new { value = accKey };
             var body = new
             {
-                worker = string.IsNullOrEmpty(me.Key) ? me.Name : me.Key,
+                worker,
                 originTaskId = issueKey,
                 started = start.ToString("yyyy-MM-dd'T'HH:mm:ss.000"),
                 timeSpentSeconds = seconds,
@@ -322,19 +328,31 @@ public class JiraClient
             {
                 throw new InvalidOperationException($"Für {issueKey} ist ein Account hinterlegt, aber Tempo ist nicht erreichbar – ohne Tempo kann Jira keinen Account buchen. Nichts gebucht.");
             }
-            if (string.IsNullOrWhiteSpace(account)) return null;
+            catch (ApiException e)
+            {
+                throw new InvalidOperationException($"Tempo lehnt die Buchung auf {issueKey} ab{(accKey != null ? $" (Account {accKey})" : "")}: {JiraErrorText(e.Message)}");
+            }
+            if (accKey == null) return null;
             var booked = (res as JsonArray)?.FirstOrDefault() ?? res;
             var attr = booked?["attributes"]?[_s.TempoAccountAttributeKey];
             var actual = attr == null ? null : ReadAccount(attr["value"] ?? attr);
-            if (actual == null && booked?["attributes"] == null) return account; // ältere Tempo-Versionen liefern keine Attribute zurück
-            if (!string.Equals(actual, account.Trim(), StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"Worklog auf {issueKey} angelegt, aber Tempo hat den Account \"{account}\" nicht übernommen (gebucht: \"{actual ?? "keiner"}\"). Bitte in Tempo prüfen.");
-            return actual;
+            if (actual == null && booked?["attributes"] == null) return accKey; // ältere Tempo-Versionen liefern keine Attribute zurück
+            if (!string.Equals(actual, accKey, StringComparison.OrdinalIgnoreCase) && !string.Equals(actual, account!.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Worklog auf {issueKey} angelegt, aber Tempo hat den Account \"{accKey}\" nicht übernommen (gebucht: \"{actual ?? "keiner"}\"). Bitte in Tempo prüfen.");
+            return actual ?? accKey;
         }
 
         var wl = new { comment, started = FormatJiraDate(start), timeSpentSeconds = seconds };
         await PostAsync($"rest/api/2/issue/{Uri.EscapeDataString(issueKey)}/worklog", wl, ct);
         return null;
+    }
+
+    /// <summary>Account (Key, Name oder ID) → Tempo-Account-Key fürs Worklog-Attribut. Ohne Treffer: Eingabe unverändert.</summary>
+    public async Task<string> TempoAccountKeyAsync(string account, CancellationToken ct = default)
+    {
+        try { if (await ResolveTempoAccountAsync(account, ct) is { Key.Length: > 0 } acc) return acc.Key; }
+        catch (Exception) { /* Tempo-Accounts nicht lesbar → so buchen, wie eingetragen */ }
+        return account.Trim();
     }
 
     /// <summary>Fehler betrifft das Account-Feld (dann nächste Schreibweise probieren, sonst echten Fehler weiterreichen).</summary>
