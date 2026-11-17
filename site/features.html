@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Features · Copit</title>
+  <meta name="description" content="Everything Copit does: parallel Claude and Copilot agents on a Kanban board, changes and delivery status per ticket, activity and budgets, projects, living docs, permissions and a token-saving script library.">
+  <meta name="theme-color" content="#14110F">
+  <meta property="og:title" content="Features · Copit">
+  <meta property="og:description" content="Everything Copit does: parallel Claude and Copilot agents on a Kanban board, changes and delivery status per ticket, activity and budgets, projects, living docs, permissions and a token-saving script library.">
+  <meta property="og:image" content="https://copit-code.github.io/Copit/assets/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Copit home"><img src="assets/logo-dark.svg" alt="Copit" width="98" height="26"></a>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav">Menu</button>
+      <nav class="nav" id="nav" aria-label="Main">
+      <a href="./">Overview</a>
+      <a href="features.html" aria-current="page">Features</a>
+      <a href="automations.html">Automations</a>
+      <a href="time-tracking.html">Time tracking</a>
+      <a href="extensions.html">Extensions</a>
+      <a href="getting-started.html">Get started</a>
+      <a class="cta" href="https://github.com/Copit-Code/Copit/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="page-hero">
+      <div class="wrap">
+        <div class="eyebrow">Features</div>
+        <h1>Everything between<br>“start agent” and “shipped”.</h1>
+        <p class="lead">A tour of the Windows app. The VSCodium extension offers the board, agent tab, activity, budgets, customize, automations and time tracking with the same logic.</p>
+        <nav class="toc" aria-label="On this page">
+          <a href="#cockpit">Cockpit</a><a href="#agents">Agents &amp; sessions</a><a href="#changes">Changes per ticket</a><a href="#delivery">Delivery status</a><a href="#activity">Activity &amp; budgets</a><a href="#projects">Projects</a><a href="#docs">Living docs</a><a href="#customize">Customize</a>
+        </nav>
+      </div>
+    </section>
+
+    <section id="cockpit">
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow">Cockpit</div>
+          <h2>Your day on one screen.</h2>
+          <p class="lead">Copit always opens in the cockpit: today's hours and booking status, recently used projects, running agents, pipelines and reviews.</p>
+          <p class="muted">Not connected to Jira or GitLab yet? The cockpit tells you and links straight to the settings.</p>
+        </div>
+        <div class="panel reveal">
+          <div class="panel-h"><span>Cockpit</span><span>Tue · 6h 15m booked of 8h</span></div>
+          <div class="panel-b">
+            <div class="kpis"><div><small>Hours</small><strong>6.25</strong></div><div><small>Booked</small><strong class="accent">78%</strong></div><div><small>Agents</small><strong>3 live</strong></div><div><small>Reviews</small><strong>2</strong></div></div>
+            <div class="jobs" style="margin-top:0">
+              <div><span>SHOP-201 · Migrate payment client</span><span class="s-run">running 12m</span></div>
+              <div><span>SHOP-198 · pipeline #4812</span><span class="s-bad">failed</span></div>
+              <div><span>CRM-77 · MR !311</span><span class="s-ok">approved</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="agents">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">Agents &amp; sessions</div>
+          <h2>A Kanban board for AI agents.</h2>
+          <p>Inbox → In progress → Review → Done. Drag cards around; the card menu opens, stops, archives or deletes an agent, sets its status or jumps to the ticket's code changes.</p>
+        </div>
+        <div class="grid grid-2">
+          <div class="tile reveal">
+            <span class="num">New agent</span>
+            <h3>Four modes, two providers</h3>
+            <p>Choose project, title, ticket, branch and task, then Claude or Copilot, a model and a mode: <b>Ask</b>, <b>Plan</b>, <b>Edit</b> or <b>Auto</b>. Optionally give every agent its own git worktree so several can work in parallel without touching your working copy. Templates from extensions pre-fill the form.</p>
+          </div>
+          <div class="tile reveal">
+            <span class="num">Session</span>
+            <h3>Watch it think and work</h3>
+            <p>A live transcript with text, tool calls and sub-agents. Questions from the agent appear as choices — answer several at once and send them together. Missing permissions can be granted once or permanently.</p>
+          </div>
+          <div class="tile reveal">
+            <span class="num">Metrics</span>
+            <h3>Every run is measured</h3>
+            <p>Agent time (wall clock), AI time, tool time, tokens, cost and changed lines — recorded per run, shown in the session and rolled up in Activity.</p>
+          </div>
+          <div class="tile reveal">
+            <span class="num">Context</span>
+            <h3>Prompts you reuse</h3>
+            <p>Choose the context window per agent and keep recurring tasks in the prompt library instead of retyping them.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="changes">
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow">Changes per ticket</div>
+          <h2>All the code behind a ticket.</h2>
+          <p class="lead">Copit collects every commit that belongs to a ticket — by key in the message or in the branch name, across all branches including remotes — plus the uncommitted work of its agents.</p>
+          <ul class="ticks">
+            <li><b>Overview</b> of all tickets with commits in a period: Jira title, commits, files, ±lines, authors.</li>
+            <li><b>Combined change</b> per file, a single commit, or an agent's uncommitted work (worktrees too).</li>
+            <li><b>File tree</b> with status and ± bars; diffs with old/new line numbers, function context and word highlights.</li>
+            <li><b>Click a line number</b> to open the file right there in VS Code or VSCodium.</li>
+            <li><b>Exact key matching</b> — <code>SHOP-1</code> never matches <code>SHOP-12</code>.</li>
+          </ul>
+        </div>
+        <div class="panel reveal" aria-label="Illustration of a diff">
+          <div class="panel-h"><span>src/Billing/TaxCalculator.cs</span><span><span style="color:var(--ok)">+3</span> <span style="color:var(--bad)">−2</span></span></div>
+          <div class="diff">
+            <div class="h">@@ -41,7 +41,8 @@ public decimal Total(Invoice invoice)</div>
+            <div class="l"><span>41</span><span>41</span><span>    var net = invoice.Lines.Sum(l =&gt; l.Net);</span></div>
+            <div class="l del"><span>42</span><span></span><span>    var tax = net * <mark>rate</mark>;</span></div>
+            <div class="l del"><span>43</span><span></span><span>    return <mark>net + tax</mark>;</span></div>
+            <div class="l add"><span></span><span>42</span><span>    var tax = net * <mark>invoice.TaxRate</mark>;</span></div>
+            <div class="l add"><span></span><span>43</span><span>    return <mark>Math.Round(net + tax, 2,</mark></span></div>
+            <div class="l add"><span></span><span>44</span><span>        <mark>MidpointRounding.AwayFromZero)</mark>;</span></div>
+            <div class="l"><span>44</span><span>45</span><span>}</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="delivery">
+      <div class="wrap split rev">
+        <div class="reveal">
+          <div class="eyebrow">Delivery status · new in 0.5</div>
+          <h2>Commit → Push → MR → Pipeline → Jira.</h2>
+          <p class="lead">Every card shows how far its ticket has shipped, with one sentence as the verdict: “Pushed · pipeline green · MR open” or “Not pushed — 2 commits ahead”.</p>
+          <ul class="ticks">
+            <li><b>Session panel</b> with every step; one click opens it in GitLab or Jira.</li>
+            <li><b>Pipeline jobs</b> grouped by stage with status and duration.</li>
+            <li><b>Job logs in Copit</b> — the last 200 lines; a red pipeline opens the failing job automatically.</li>
+            <li><b>Retry</b> a failed pipeline right there.</li>
+            <li><b>Always fresh</b>: after each run, after moving a card, in the background — every 30 s while a pipeline runs, with a notification when it turns green or red.</li>
+          </ul>
+        </div>
+        <div class="panel reveal">
+          <div class="panel-h"><span>SHOP-201 · Delivery</span><span>!318</span></div>
+          <div class="panel-b">
+            <div class="steps">
+              <div class="step ok"><b>✓</b>Commit</div><div class="step ok"><b>✓</b>Push</div><div class="step ok"><b>✓</b>MR</div><div class="step run"><b>◐</b>Pipeline</div><div class="step idle"><b>·</b>Jira</div>
+            </div>
+            <div class="verdict"><span style="color:var(--warn)">■</span> Pushed · pipeline running · MR open</div>
+            <div class="jobs">
+              <div><span>build · compile</span><span class="s-ok">passed 1m 38s</span></div>
+              <div><span>test · unit</span><span class="s-ok">passed 3m 11s</span></div>
+              <div><span>test · integration</span><span class="s-run">running…</span></div>
+              <div><span>deploy · staging</span><span class="dim">manual</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="activity">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">Activity &amp; budgets</div>
+          <h2>Spend you can see — and cap.</h2>
+          <p>Day and week views with timelines per agent and project, split into AI time, agent time and tool time, with tokens and dollars. Real Claude sessions you ran outside Copit are included.</p>
+        </div>
+        <div class="grid grid-3">
+          <div class="tile reveal"><span class="num">Budgets</span><h3>Cost or hours</h3><p>Per week, month or in total. Scoped to specific project folders or to everything.</p></div>
+          <div class="tile reveal"><span class="num">Thresholds</span><h3>Warn, then stop</h3><p>Warnings at e.g. 80 % and 100 %. With the optional hard stop, new runs are blocked once the budget is spent.</p></div>
+          <div class="tile reveal"><span class="num">Daily limits</span><h3>Per provider</h3><p>A dollar limit for Claude; hours or runs for Copilot — including premium requests and AI credits pricing.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="projects">
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow">Projects</div>
+          <h2>Epic, repo and pipeline — tied together.</h2>
+          <p class="lead">A project connects a Jira epic, a source folder, a GitLab project, a colour and AI instructions such as “.NET 9, xUnit, commits in English”.</p>
+          <ul class="ticks">
+            <li><b>Folders</b> like <code>Customer A/Backend</code> — collapsible, drag &amp; drop, rename and move.</li>
+            <li><b>Project page</b> with the epic's ticket board, notes and sessions.</li>
+            <li><b>New ticket</b> drafted and estimated by AI.</li>
+            <li><b>Start a session from a ticket</b>, with or without a branch.</li>
+          </ul>
+        </div>
+        <div class="panel reveal">
+          <div class="panel-h"><span>Projects</span><span>4 projects · 2 folders</span></div>
+          <div class="panel-b mono" style="font-size:13px;line-height:2">
+            <div class="dim">▾ Customer A</div>
+            <div style="padding-left:18px" class="dim">▾ Backend</div>
+            <div style="padding-left:36px"><span class="accent">■</span> Shop API <span class="tag">SHOP-100</span></div>
+            <div style="padding-left:36px"><span style="color:var(--ok)">■</span> Billing <span class="tag">BIL-12</span></div>
+            <div style="padding-left:18px"><span style="color:var(--warn)">■</span> Admin UI <span class="tag">SHOP-140</span></div>
+            <div class="dim">▸ Internal</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="docs">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">Living docs</div>
+          <h2>Documentation that writes itself into your repo.</h2>
+          <p>Copit generates linked Markdown under <code>/docs</code> in each project's repository — rendered directly by GitHub and GitLab. Generated blocks sit between markers, everything else you write stays untouched. A docs agent adds descriptions and may only write inside <code>docs/</code>.</p>
+        </div>
+        <div class="grid grid-3">
+          <div class="tile reveal"><span class="num">01</span><h3>Code &amp; architecture</h3><p>Modules, dependencies as Mermaid diagrams, files and types.</p></div>
+          <div class="tile reveal"><span class="num">02</span><h3>Work &amp; history</h3><p>Tickets ↔ commits ↔ MRs ↔ agent sessions ↔ worklogs, all cross-linked.</p></div>
+          <div class="tile reveal"><span class="num">03</span><h3>Project knowledge</h3><p>Conventions, mappings, notes and decisions in one place.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="customize">
+      <div class="wrap split rev">
+        <div class="reveal">
+          <div class="eyebrow">Customize</div>
+          <h2>You decide what agents may do.</h2>
+          <p class="lead">Allow, Ask or Deny for tools and commands — including a matrix for Git operations. Copit passes the rules to the CLIs and respects your Claude <code>settings.json</code>.</p>
+          <ul class="ticks">
+            <li><b>Script library</b>: agents write small scripts for repetitive work (search, log filtering, test summaries) and call them instead of dozens of tool calls — fewer tokens.</li>
+            <li><b>Compact index</b> of available scripts in the system prompt; only library scripts may run, usage is counted.</li>
+            <li><b>Global or per project</b>: <code>%LOCALAPPDATA%\Copit\scripts</code> or <code>.copit/scripts</code> in the repo.</li>
+            <li><b>Integrations</b> for Jira, GitLab and auto-update. Secrets are encrypted with Windows DPAPI.</li>
+          </ul>
+        </div>
+        <div class="panel reveal">
+          <div class="panel-h"><span>Permissions · Git</span><span>Allow · Ask · Deny</span></div>
+          <div class="table-wrap" style="border:0">
+            <table>
+              <tr><th>Operation</th><th>Rule</th></tr>
+              <tr><td><code>git status / diff / log</code></td><td style="color:var(--ok)">Allow</td></tr>
+              <tr><td><code>git commit</code></td><td style="color:var(--ok)">Allow</td></tr>
+              <tr><td><code>git push</code></td><td style="color:var(--warn)">Ask</td></tr>
+              <tr><td><code>git push --force</code></td><td style="color:var(--bad)">Deny</td></tr>
+              <tr><td><code>git reset --hard</code></td><td style="color:var(--bad)">Deny</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-block">
+      <div class="wrap">
+        <div><div class="eyebrow">Next</div><h2>Make it do things on its own.</h2></div>
+        <div><p class="muted">Automations react to agents, cards, commits, pipelines and Jira — and extensions add your own tools.</p>
+          <div class="btn-row mt-24"><a class="btn primary" href="automations.html">Automations <span class="arrow">→</span></a><a class="btn" href="extensions.html">Extensions</a></div></div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <img src="assets/logo-dark.svg" alt="Copit" width="76" height="20">
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Get started</a>
+        <a href="extensions.html">Extensions</a>
+        <a href="https://github.com/Copit-Code/Copit">GitHub</a>
+        <a href="https://github.com/Copit-Code/Copit/releases">Releases</a>
+      </nav>
+      <span>Runs locally on your machine · © <span data-year>2026</span> Copit</span>
+    </div>
+  </footer>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>

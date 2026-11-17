@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automations · Copit</title>
+  <meta name="description" content="IF/THEN rules in Copit: react to agents, board cards, commits, pipelines, Jira and schedules with actions like Jira comments, fix agents, pushes, merge requests and time checks.">
+  <meta name="theme-color" content="#14110F">
+  <meta property="og:title" content="Automations · Copit">
+  <meta property="og:description" content="IF/THEN rules in Copit: react to agents, board cards, commits, pipelines, Jira and schedules with actions like Jira comments, fix agents, pushes, merge requests and time checks.">
+  <meta property="og:image" content="https://copit-code.github.io/Copit/assets/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Copit home"><img src="assets/logo-dark.svg" alt="Copit" width="98" height="26"></a>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav">Menu</button>
+      <nav class="nav" id="nav" aria-label="Main">
+      <a href="./">Overview</a>
+      <a href="features.html">Features</a>
+      <a href="automations.html" aria-current="page">Automations</a>
+      <a href="time-tracking.html">Time tracking</a>
+      <a href="extensions.html">Extensions</a>
+      <a href="getting-started.html">Get started</a>
+      <a class="cta" href="https://github.com/Copit-Code/Copit/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="page-hero">
+      <div class="wrap">
+        <div class="eyebrow">Automations</div>
+        <h1>IF this happens,<br><span class="accent">THEN</span> Copit does that.</h1>
+        <p class="lead">Rules made of a trigger, optional conditions and one or more actions. Placeholders carry values from the event into every action — and each rule has a test run, so you know it works before it fires for real.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow">Example</div>
+          <h2>Ship when the card says done.</h2>
+          <p class="lead">Move a card from Review to Done and Copit pushes exactly that card's branch. If nothing was pushed, it tells you.</p>
+          <p class="muted">Placeholders like <code>{{ticket}}</code>, <code>{{title}}</code>, <code>{{summary}}</code>, <code>{{branch}}</code>, <code>{{from}}</code> and <code>{{to}}</code> are filled from the event.</p>
+        </div>
+        <div class="panel reveal" aria-label="Illustration of the automation builder">
+          <div class="panel-h"><span>Automation · Push on done</span><span style="color:var(--ok)">● enabled</span></div>
+          <div class="panel-b rule">
+            <div class="ln"><span class="kw">IF</span><span class="chip">Card moved</span><span class="dim">from</span><span class="chip">Review</span><span class="dim">to</span><span class="chip">Done</span></div>
+            <div class="ln"><span class="kw">THEN</span><span class="chip">Push</span><span class="dim">branch</span><span class="chip var">{{branch}}</span></div>
+            <div class="ln"><span class="kw"></span><span class="chip">Jira comment</span><span class="chip var">“Done: {{summary}}”</span></div>
+            <div class="ln"><span class="kw">TEST</span><span style="color:var(--ok)">✓ 2 actions would run for SHOP-198</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="grid grid-2">
+          <div class="tile reveal">
+            <span class="num">Triggers</span>
+            <h3>When something happens</h3>
+            <ul class="ticks mt-24">
+              <li><b>Agent</b> started, finished, needs input, failed or stopped</li>
+              <li><b>Card moved</b>, with from- and to-column</li>
+              <li><b>Git</b>: new commit, push, new branch</li>
+              <li><b>Pipeline</b> failed or succeeded</li>
+              <li><b>Jira</b>: ticket status changed, ticket assigned — narrowed by JQL</li>
+              <li><b>Schedule</b>: time of day and weekdays</li>
+            </ul>
+          </div>
+          <div class="tile reveal">
+            <span class="num">Actions</span>
+            <h3>What Copit does</h3>
+            <ul class="ticks mt-24">
+              <li><b>Agents</b>: set status, start a new agent, continue an agent, notify</li>
+              <li><b>Jira</b>: comment, change status, book time, check hours</li>
+              <li><b>Git</b>: commit, push (also the card's branch), create branch, merge request</li>
+              <li><b>More</b>: update docs, ask the AI, run a command</li>
+              <li><b>Extensions</b>: any action an extension ships, as <code>ext:&lt;id&gt;/&lt;action&gt;</code></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">Built-in recipes</div>
+          <h2>Start from a recipe.</h2>
+          <p>Copit ships with ready-made rules — some switched off by default, so nothing happens until you say so.</p>
+        </div>
+        <div class="grid grid-2">
+          <div class="tile reveal"><span class="num">Recipe</span><h3>Finished → Jira comment</h3><p>When an agent finishes, post its summary as a comment on the ticket.</p></div>
+          <div class="tile reveal"><span class="num">Recipe</span><h3>Pipeline red → fix agent</h3><p>A failing pipeline starts an agent that looks at the failure and works on a fix.</p></div>
+          <div class="tile reveal"><span class="num">Recipe</span><h3>End-of-day check</h3><p>At the end of the day, Copit checks your hours and reminds you of what's still unbooked.</p></div>
+          <div class="tile reveal"><span class="num">Recipe</span><h3>Ticket “In progress” → plan agent</h3><p>Move a ticket to In progress in Jira and a planning agent drafts the implementation.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-block">
+      <div class="wrap">
+        <div><div class="eyebrow">Next</div><h2>Let the hours book themselves.</h2></div>
+        <div><p class="muted">Agent runs, commits and GitLab activity become worklog suggestions.</p>
+          <div class="btn-row mt-24"><a class="btn primary" href="time-tracking.html">Time tracking <span class="arrow">→</span></a></div></div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <img src="assets/logo-dark.svg" alt="Copit" width="76" height="20">
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Get started</a>
+        <a href="extensions.html">Extensions</a>
+        <a href="https://github.com/Copit-Code/Copit">GitHub</a>
+        <a href="https://github.com/Copit-Code/Copit/releases">Releases</a>
+      </nav>
+      <span>Runs locally on your machine · © <span data-year>2026</span> Copit</span>
+    </div>
+  </footer>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>
