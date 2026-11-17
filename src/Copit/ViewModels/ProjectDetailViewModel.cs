@@ -250,7 +250,9 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         if (choice.StartsWith("Code-Änderungen")) { _nav.Go(Routes.Changes, new Copit.Views.ChangesRequest(Project.Id, i.Key)); return; }
         var desc = string.IsNullOrWhiteSpace(i.Description) ? "" : $"\n\nBeschreibung aus Jira:\n{(i.Description.Length > 4000 ? i.Description[..4000] : i.Description)}";
         var prompt = $"Wir arbeiten jetzt an Ticket {i.Key}: \"{i.Summary}\".{desc}\n\nVerschaffe dir einen Überblick über den relevanten Code und schlage einen Umsetzungsplan vor. Stelle Rückfragen, falls Anforderungen unklar sind.";
-        _nav.Go(Routes.Session, new SessionRequest(Project, prompt, $"{i.Key}: {i.Summary}", true, choice.StartsWith("Branch") ? i : null));
+        var autoPrompt = $"Wir arbeiten jetzt an Ticket {i.Key}: \"{i.Summary}\".{desc}\n\nVerschaffe dir einen Überblick über den relevanten Code und setze das Ticket selbstständig um. " +
+                         "Triff bei unklaren Anforderungen sinnvolle Annahmen und nenne sie am Ende.";
+        _nav.Go(Routes.Session, new SessionRequest(Project, prompt, $"{i.Key}: {i.Summary}", true, choice.StartsWith("Branch") ? i : null, AutoPrompt: autoPrompt));
     }
 
     // ---------------- Notizen ----------------

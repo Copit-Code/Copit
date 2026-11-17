@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Extensions · Copit</title>
+  <meta name="description" content="Extend Copit with agent templates, automation actions, recipes, permission rules and your own tools — installed and auto-updated straight from GitHub.">
+  <meta name="theme-color" content="#14110F">
+  <meta property="og:title" content="Extensions · Copit">
+  <meta property="og:description" content="Extend Copit with agent templates, automation actions, recipes, permission rules and your own tools — installed and auto-updated straight from GitHub.">
+  <meta property="og:image" content="https://copit-code.github.io/Copit/assets/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Copit home"><img src="assets/logo-dark.svg" alt="Copit" width="98" height="26"></a>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav">Menu</button>
+      <nav class="nav" id="nav" aria-label="Main">
+      <a href="./">Overview</a>
+      <a href="features.html">Features</a>
+      <a href="automations.html">Automations</a>
+      <a href="time-tracking.html">Time tracking</a>
+      <a href="extensions.html" aria-current="page">Extensions</a>
+      <a href="getting-started.html">Get started</a>
+      <a class="cta" href="https://github.com/Copit-Code/Copit/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="page-hero">
+      <div class="wrap">
+        <div class="eyebrow">Extensions</div>
+        <h1>Make Copit<br>fit <span class="accent">your</span> stack.</h1>
+        <p class="lead">Extensions live in a GitHub repository or a local folder. Copit installs them, shows you exactly which commands they bring, and keeps them up to date.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">What an extension can add</div>
+          <h2>Five building blocks.</h2>
+        </div>
+        <div class="grid grid-3">
+          <div class="tile reveal"><span class="num">01</span><h3>Agent templates</h3><p>Pre-filled agents under <b>New agent → Template</b>, with placeholders like <code>{{ticket}}</code> and <code>{{branch}}</code>, a mode and allowed tools.</p></div>
+          <div class="tile reveal"><span class="num">02</span><h3>Actions</h3><p>Scripts that show up in the automation builder as <code>ext:&lt;id&gt;/&lt;action&gt;</code>, with parameters and event variables.</p></div>
+          <div class="tile reveal"><span class="num">03</span><h3>Recipes</h3><p>Ready-made automations — imported switched off, so you review them before they run.</p></div>
+          <div class="tile reveal"><span class="num">04</span><h3>Permission rules</h3><p>Allow / Ask / Deny rules, adopted as Copit rules only after you confirm.</p></div>
+          <div class="tile reveal"><span class="num">05</span><h3>Your own tools</h3><p>A full tool with its own navigation entry — for example an MCP prompt tool with presets.</p></div>
+          <div class="tile reveal"><span class="num">↻</span><h3>Auto-updates</h3><p>Copit checks for new releases or commits at startup and every 6 hours and reports updates.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="eyebrow">Included</div>
+          <h2>Bundled extensions.</h2>
+          <p>Enter one of these sources under <b>Copit → Extensions</b>.</p>
+        </div>
+        <div class="table-wrap reveal">
+          <table>
+            <tr><th>Source</th><th>What it does</th></tr>
+            <tr><td><code>Copit-Code/Copit/extensions/copit-obsidian</code></td><td><b>Obsidian knowledge graph.</b> Agents, tickets, projects and architecture (applications, services, API calls, endpoints, systems, tools) as a linked vault — plus a daily report and vault context for agents.</td></tr>
+            <tr><td><code>Copit-Code/Copit/extensions/copit-mcp</code></td><td><b>MCP analysis.</b> Pick exactly which MCP servers to use, prompt an analysis, keep history and export.</td></tr>
+            <tr><td><code>Copit-Code/Copit/extensions/copit-dotnet</code></td><td><b>.NET.</b> Agent templates for tests and reviews, and <code>dotnet test</code> as an automation action.</td></tr>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow">Install</div>
+          <h2>Point Copit at a repo.</h2>
+          <div class="table-wrap mt-24">
+            <table>
+              <tr><th>Source</th><th>Meaning</th></tr>
+              <tr><td><code>owner/repo</code></td><td>Latest release with <code>*.copit.zip</code>, otherwise the default branch</td></tr>
+              <tr><td><code>owner/repo@v1.2.0</code></td><td>A specific release, tag or branch</td></tr>
+              <tr><td><code>owner/repo/path</code></td><td>A folder inside a repo</td></tr>
+              <tr><td><code>https://github.com/…/tree/main/dir</code></td><td>Same, as a URL</td></tr>
+            </table>
+          </div>
+          <p class="muted mt-24">Public repos work without sign-in; private ones need a GitHub token with “Contents: Read-only”. For development, load a <b>local folder</b> and hit “Reload”.</p>
+        </div>
+        <div class="reveal">
+          <div class="panel">
+            <div class="panel-h"><span>copit-extension.json</span><span>manifest</span></div>
+<pre><code>{
+  "id": "my-extension",
+  "name": "My Extension",
+  "version": "1.0.0",
+  "agentTemplates": [{
+    "id": "tests",
+    "title": "Tests for {{ticket}}",
+    "mode": "Edit",
+    "prompt": "Write tests for {{ticket}} …",
+    "branch": "test/{{ticket}}",
+    "allowedTools": ["Bash(dotnet test:*)"]
+  }],
+  "actions": [{
+    "id": "test",
+    "label": "dotnet test",
+    "run": "powershell -File \"{ext}/scripts/test.ps1\""
+  }],
+  "automations": [{
+    "id": "test-after-agent",
+    "trigger": "agent.finished",
+    "actions": [{ "type": "ext:my-extension/test" }]
+  }],
+  "permissions": [
+    { "pattern": "Bash(dotnet test:*)", "level": "Allow" }
+  ]
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="note reveal"><b>Security.</b> Actions run commands with your permissions. Copit shows every command an extension brings before installing it — only install extensions from sources you trust.</div>
+        <div class="btn-row mt-40"><a class="btn" href="https://github.com/Copit-Code/Copit/blob/main/docs/extensions.md">Full extension reference (German) <span class="arrow">→</span></a><a class="btn" href="https://github.com/Copit-Code/Copit/tree/main/extensions/template">Extension template</a></div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <img src="assets/logo-dark.svg" alt="Copit" width="76" height="20">
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Get started</a>
+        <a href="extensions.html">Extensions</a>
+        <a href="https://github.com/Copit-Code/Copit">GitHub</a>
+        <a href="https://github.com/Copit-Code/Copit/releases">Releases</a>
+      </nav>
+      <span>Runs locally on your machine · © <span data-year>2026</span> Copit</span>
+    </div>
+  </footer>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>

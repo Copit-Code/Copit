@@ -36,6 +36,9 @@ public class AgentRequest
     public string? McpConfigPath { get; init; }
     /// <summary>Nur die Server aus <see cref="McpConfigPath"/> verwenden, keine aus den Claude-Einstellungen (--strict-mcp-config).</summary>
     public bool StrictMcpConfig { get; init; }
+    /// <summary>In der Docker-Sandbox ausführen (Container-Name aus <see cref="SandboxId"/>).</summary>
+    public bool Sandbox { get; init; }
+    public string SandboxId { get; init; } = "";
 }
 
 public interface IAgentRunner

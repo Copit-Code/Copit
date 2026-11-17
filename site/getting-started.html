@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Get started · Copit</title>
+  <meta name="description" content="Install Copit, connect Claude Code or GitHub Copilot CLI, optionally Jira and GitLab, create a project and start your first agent.">
+  <meta name="theme-color" content="#14110F">
+  <meta property="og:title" content="Get started · Copit">
+  <meta property="og:description" content="Install Copit, connect Claude Code or GitHub Copilot CLI, optionally Jira and GitLab, create a project and start your first agent.">
+  <meta property="og:image" content="https://copit-code.github.io/Copit/assets/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Copit home"><img src="assets/logo-dark.svg" alt="Copit" width="98" height="26"></a>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav">Menu</button>
+      <nav class="nav" id="nav" aria-label="Main">
+      <a href="./">Overview</a>
+      <a href="features.html">Features</a>
+      <a href="automations.html">Automations</a>
+      <a href="time-tracking.html">Time tracking</a>
+      <a href="extensions.html">Extensions</a>
+      <a href="getting-started.html" aria-current="page">Get started</a>
+      <a class="cta" href="https://github.com/Copit-Code/Copit/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="page-hero">
+      <div class="wrap">
+        <div class="eyebrow">Get started</div>
+        <h1>From download to<br>first agent in <span class="accent">five steps</span>.</h1>
+        <p class="lead">You need Windows and at least one AI CLI. Jira and GitLab are optional.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <ol class="howto">
+          <li class="reveal">
+            <div>
+              <h3>Install Copit</h3>
+              <p><b>Windows app:</b> open the <a href="https://github.com/Copit-Code/Copit/releases/latest">latest release</a> and run <code>Copit-Setup-X.Y.Z.exe</code>. It installs per user to <code>%LOCALAPPDATA%\Programs\Copit</code> — no admin rights needed. Prefer portable? Unzip <code>Copit-X.Y.Z-win-x64-portable.zip</code> and start <code>Copit.exe</code>.</p>
+              <p>Updates are automatic: Copit checks at startup and every 6 hours, downloads the installer and restarts.</p>
+              <div class="note"><b>SmartScreen:</b> the installer isn't signed yet, so Windows may show “Windows protected your PC”. Click <b>More info → Run anyway</b>.</div>
+              <p><b>VSCodium extension:</b></p>
+<pre><code>./scripts/setup-vscodium.ps1 -Repo "Copit-Code/Copit"</code></pre>
+              <p>This downloads portable VSCodium, installs Copit plus the “Copit Dark” theme, Solution Explorer and C# IntelliSense from Open VSX, and creates a desktop shortcut. The extension updates itself too.</p>
+            </div>
+          </li>
+          <li class="reveal">
+            <div>
+              <h3>Provide an AI CLI</h3>
+              <p>Copit drives the official command-line tools. Install and sign in to at least one:</p>
+              <div class="table-wrap">
+                <table>
+                  <tr><th>CLI</th><th>Install</th><th>Sign in</th></tr>
+                  <tr><td><b>Claude Code</b></td><td><code>npm i -g @anthropic-ai/claude-code</code> or the native installer</td><td>Run <code>claude</code> once</td></tr>
+                  <tr><td><b>GitHub Copilot CLI</b></td><td><code>npm i -g @github/copilot</code></td><td>Run <code>copilot</code> once</td></tr>
+                </table>
+              </div>
+              <p class="mt-24">Under <b>Settings → AI</b> Copit detects the paths automatically — hit <b>Test</b> to check. Set your default provider, model, global instructions and, optionally, the token-saving script library there.</p>
+            </div>
+          </li>
+          <li class="reveal">
+            <div>
+              <h3>Connect Jira and GitLab <span class="tag">optional</span></h3>
+              <ul>
+                <li><b>Jira:</b> URL and token (Bearer or Basic). Optionally Tempo (account attribute), account field, epic link field and default issue type.</li>
+                <li><b>GitLab:</b> URL and a personal access token with <code>read_api</code> — <code>api</code> for merge requests and pipeline actions.</li>
+              </ul>
+              <p>Without Jira, time tracking is stored internally — even without a ticket.</p>
+            </div>
+          </li>
+          <li class="reveal">
+            <div>
+              <h3>Create your first project</h3>
+              <p>Open <b>Projects → New project</b>, enter a Jira epic such as <code>SHOP-100</code> and confirm with <b>Check</b>. Pick the source folder — Copit detects the GitLab project from the Git remote. Optionally put it in a folder like <code>Customer A/Backend</code> and add AI instructions such as “.NET 9, xUnit, commits in English”.</p>
+            </div>
+          </li>
+          <li class="reveal">
+            <div>
+              <h3>Start your first agent</h3>
+              <p>Open <b>Agents → New agent</b>, choose the project, title, ticket and task, and a mode: <b>Ask</b>, <b>Plan</b>, <b>Edit</b> or <b>Auto</b>. With a branch and “own worktree” the agent works in parallel without touching your working copy.</p>
+              <p>The card moves across the board — Inbox → In progress → Review → Done. Click it to open the session with transcript, tool calls, sub-agents and metrics. <b>Changes</b> shows the ticket's code.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow">Your data</div>
+          <h2>Everything stays on your machine.</h2>
+          <p class="lead">Projects, sessions, automations, budgets and settings live in <code>%LOCALAPPDATA%\Copit</code>. Secrets such as tokens are encrypted with Windows DPAPI. No Copit cloud, no account.</p>
+        </div>
+        <div class="reveal">
+          <div class="btn-row"><a class="btn primary" href="https://github.com/Copit-Code/Copit/releases/latest">Download <span data-version>latest</span> <span class="arrow">→</span></a><a class="btn" href="features.html">Explore features</a></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <img src="assets/logo-dark.svg" alt="Copit" width="76" height="20">
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Get started</a>
+        <a href="extensions.html">Extensions</a>
+        <a href="https://github.com/Copit-Code/Copit">GitHub</a>
+        <a href="https://github.com/Copit-Code/Copit/releases">Releases</a>
+      </nav>
+      <span>Runs locally on your machine · © <span data-year>2026</span> Copit</span>
+    </div>
+  </footer>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>

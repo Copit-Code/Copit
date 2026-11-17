@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Time tracking · Copit</title>
+  <meta name="description" content="Copit drafts your worklogs from agent runs, commits, GitLab activity and notes, remembers your answers and books to Jira and Tempo with the right account — or internally without Jira.">
+  <meta name="theme-color" content="#14110F">
+  <meta property="og:title" content="Time tracking · Copit">
+  <meta property="og:description" content="Copit drafts your worklogs from agent runs, commits, GitLab activity and notes, remembers your answers and books to Jira and Tempo with the right account — or internally without Jira.">
+  <meta property="og:image" content="https://copit-code.github.io/Copit/assets/social-preview.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Copit home"><img src="assets/logo-dark.svg" alt="Copit" width="98" height="26"></a>
+      <button class="nav-toggle" aria-expanded="false" aria-controls="nav">Menu</button>
+      <nav class="nav" id="nav" aria-label="Main">
+      <a href="./">Overview</a>
+      <a href="features.html">Features</a>
+      <a href="automations.html">Automations</a>
+      <a href="time-tracking.html" aria-current="page">Time tracking</a>
+      <a href="extensions.html">Extensions</a>
+      <a href="getting-started.html">Get started</a>
+      <a class="cta" href="https://github.com/Copit-Code/Copit/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="page-hero">
+      <div class="wrap">
+        <div class="eyebrow">Time tracking</div>
+        <h1>Your timesheet,<br>drafted from <span class="accent">what you did</span>.</h1>
+        <p class="lead">At the end of the day Copit proposes worklogs based on everything that actually happened. You review, adjust and book — to Jira and Tempo, or internally if you don't use Jira at all.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split">
+        <div class="reveal">
+          <div class="eyebrow">Suggestions</div>
+          <h2>Built from real signals.</h2>
+          <p class="lead">The AI turns your day's activity into booking suggestions. It books the estimated effort of a person — not the raw AI time.</p>
+          <ul class="ticks">
+            <li><b>Agent runs</b> with their tickets and durations</li>
+            <li><b>Commits</b> mapped to tickets</li>
+            <li><b>GitLab activity</b>: pushes, merge requests, comments</li>
+            <li><b>Notes</b> you jotted down during the day</li>
+          </ul>
+        </div>
+        <div class="panel reveal" aria-label="Illustration of worklog suggestions">
+          <div class="panel-h"><span>Suggestions · Tuesday</span><span>7h 30m</span></div>
+          <div class="table-wrap" style="border:0">
+            <table>
+              <tr><th>Ticket</th><th>Work</th><th>Time</th></tr>
+              <tr><td><b>SHOP-201</b></td><td>Payment client migrated to v3, retries and tests</td><td><b>3h 00m</b></td></tr>
+              <tr><td><b>SHOP-198</b></td><td>CSV export, review feedback, pipeline fix</td><td><b>2h 15m</b></td></tr>
+              <tr><td><b>SHOP-207</b></td><td>Admin list pagination (agent run + review)</td><td><b>1h 30m</b></td></tr>
+              <tr><td><b>CRM-77</b></td><td>MR !311 review comments</td><td><b>0h 45m</b></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="grid grid-3">
+          <div class="tile reveal"><span class="num">Memory</span><h3>Asks once, remembers</h3><p>When something is unclear, Copit asks. Answers like “topic X belongs to ticket Y” are remembered for the following days.</p></div>
+          <div class="tile reveal"><span class="num">Tempo</span><h3>Always the right account</h3><p>Copit only books with a valid Tempo account — taken from the ticket, from memory or from the project mapping, and resolved to the account key Tempo expects.</p></div>
+          <div class="tile reveal"><span class="num">Epics</span><h3>Missing ticket? Created.</h3><p>No fitting ticket for the work? Copit creates a task in the epic, with the account already set.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap split rev">
+        <div class="reveal">
+          <div class="eyebrow">Calendar</div>
+          <h2>Account status at a glance.</h2>
+          <p class="lead">Each day's bar is split by account status — green with an account, orange without, grey unknown — with the hours on top. This includes bookings made outside Copit; accounts are read from Tempo.</p>
+          <p class="muted">In the day view you can add a missing account to an existing booking.</p>
+        </div>
+        <div class="panel reveal" aria-label="Illustration of the calendar">
+          <div class="panel-h"><span>Week 47</span><span>36.5h</span></div>
+          <div class="panel-b">
+            <div class="bars">
+              <div class="bar-row"><span>Mon</span><span class="track"><i style="width:88%;background:var(--ok)"></i></span><span class="r">8.0h</span></div>
+              <div class="bar-row"><span>Tue</span><span class="track"><i style="width:70%;background:var(--ok)"></i><i style="width:12%;background:var(--accent)"></i></span><span class="r">7.5h</span></div>
+              <div class="bar-row"><span>Wed</span><span class="track"><i style="width:76%;background:var(--ok)"></i><i style="width:8%;background:var(--fg-3)"></i></span><span class="r">7.75h</span></div>
+              <div class="bar-row"><span>Thu</span><span class="track"><i style="width:60%;background:var(--ok)"></i><i style="width:22%;background:var(--accent)"></i></span><span class="r">7.5h</span></div>
+              <div class="bar-row"><span>Fri</span><span class="track"><i style="width:52%;background:var(--ok)"></i></span><span class="r">5.75h</span></div>
+            </div>
+            <div class="legend"><span><i style="background:var(--ok)"></i>With account</span><span><i style="background:var(--accent)"></i>Without account</span><span><i style="background:var(--fg-3)"></i>Unknown</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <div class="note reveal"><b>No Jira? No problem.</b> Without a Jira connection Copit books internally to <code>%LOCALAPPDATA%\Copit\worklogs.json</code> — even without a ticket.</div>
+      </div>
+    </section>
+
+    <section class="cta-block">
+      <div class="wrap">
+        <div><div class="eyebrow">Next</div><h2>Ready to try it?</h2></div>
+        <div><p class="muted">Five steps from download to your first agent.</p>
+          <div class="btn-row mt-24"><a class="btn primary" href="getting-started.html">Get started <span class="arrow">→</span></a></div></div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="wrap">
+      <img src="assets/logo-dark.svg" alt="Copit" width="76" height="20">
+      <nav aria-label="Footer">
+        <a href="features.html">Features</a>
+        <a href="getting-started.html">Get started</a>
+        <a href="extensions.html">Extensions</a>
+        <a href="https://github.com/Copit-Code/Copit">GitHub</a>
+        <a href="https://github.com/Copit-Code/Copit/releases">Releases</a>
+      </nav>
+      <span>Runs locally on your machine · © <span data-year>2026</span> Copit</span>
+    </div>
+  </footer>
+  <script src="assets/site.js" defer></script>
+</body>
+</html>

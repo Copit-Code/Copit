@@ -120,22 +120,35 @@ public class SessionManager : IAgentOps
 
     public void RaiseAgentsChanged() => MainThread.BeginInvokeOnMainThread(() => AgentsChanged?.Invoke());
 
-    public SessionHost Create(CopitProject project, AiProvider? provider = null)
+    public SessionHost Create(CopitProject project, AiProvider? provider = null, AgentMode? mode = null)
     {
-        var s = _store.Create(project, provider ?? project.Provider ?? _settings.Settings.Ai.DefaultProvider, AgentMode.Edit);
+        var s = _store.Create(project, provider ?? project.Provider ?? _settings.Settings.Ai.DefaultProvider, mode ?? AgentMode.Edit);
         RaiseAgentsChanged();
         return Host(s);
     }
 
     /// <summary>Neuer Agent mit Titel, Ticket, Branch (optional eigener Worktree).</summary>
     public async Task<SessionHost> CreateAgentAsync(CopitProject project, string title, string? ticket, string? branch, AgentMode mode,
-        AiProvider provider, string model = "", bool? worktree = null)
+        AiProvider provider, string model = "", bool? worktree = null, bool sandbox = false)
     {
         var s = _store.Create(project, provider, mode);
         s.Title = string.IsNullOrWhiteSpace(title) ? "Neuer Agent" : title.Trim();
         s.Ticket = string.IsNullOrWhiteSpace(ticket) ? null : ticket.Trim().ToUpperInvariant();
         s.Model = model;
         s.Cwd = project.SourceFolder;
+        if (sandbox)
+        {
+            // Sandbox: eigene Repo-Kopie, die in den Container gemountet wird – dein Arbeitsstand bleibt unberührt
+            if (!GitService.IsRepo(project.SourceFolder)) throw new InvalidOperationException("Sandbox braucht ein Git-Repository als Quellordner.");
+            branch = string.IsNullOrWhiteSpace(branch) ? (s.Ticket != null ? $"feature/{s.Ticket}" : $"copit/{s.Id[..6]}") : branch.Trim();
+            s.Branch = branch;
+            s.Cwd = await SandboxService.CreateWorkspaceAsync(Git, project.SourceFolder, branch, s.Id);
+            s.Sandbox = true;
+            s.BaseSha = (await Git.RunAsync(s.Cwd, default, "rev-parse", "HEAD")).StdOut.Trim() is { Length: > 0 } sha ? sha : null;
+            _store.Save(s);
+            RaiseAgentsChanged();
+            return Host(s);
+        }
         if (!string.IsNullOrWhiteSpace(branch) && GitService.IsRepo(project.SourceFolder))
         {
             branch = branch.Trim();
@@ -302,6 +315,15 @@ public class SessionManager : IAgentOps
         Close(s);
         if (s.Worktree && s.Cwd != null && _data.Project(s.ProjectId)?.SourceFolder is { } repo)
             await Git.RunAsync(repo, default, "worktree", "remove", "--force", s.Cwd);
+        if (s.Sandbox && s.Cwd != null && s.Cwd.StartsWith(Core.Storage.AppPaths.Dir("sandboxes"), StringComparison.OrdinalIgnoreCase) && Directory.Exists(s.Cwd))
+        {
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(s.Cwd, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal);
+                Directory.Delete(s.Cwd, true);
+            }
+            catch (Exception e) { App.LogCrash(e); }
+        }
         _store.Delete(s);
         RaiseAgentsChanged();
     }
@@ -684,8 +706,11 @@ public partial class SessionHost : ObservableObject
             parts.Add($"Du arbeitest im Projekt \"{p.Name}\" (Jira-Epic {p.EpicKey}{(string.IsNullOrEmpty(p.GitLabProject) ? "" : ", GitLab " + p.GitLabProject)}).");
             if (!string.IsNullOrWhiteSpace(p.Instructions)) parts.Add(p.Instructions);
         }
-        parts.Add(QuestionParser.Instructions);
-        if (Session.Mode == AgentMode.Auto) parts.Add(QuestionParser.AutoInstructions);
+        parts.Add(Session.Mode == AgentMode.Auto ? QuestionParser.AutoInstructions : QuestionParser.Instructions);
+        if (Session.Sandbox)
+            parts.Add($"Du arbeitest in einer abgeschotteten Sandbox (Docker) im Ordner /work auf Branch {Session.Branch}. Es gibt kein Internet und keinen Zugriff auf interne Dienste – " +
+                      "Paket-Downloads, API-Aufrufe und Pushes schlagen fehl, versuche sie nicht. Arbeite mit dem, was im Repo liegt. " +
+                      "Committe deine Änderungen am Ende auf diesem Branch (git commit); gepusht wird außerhalb der Sandbox.");
         if (_scriptDir != null)
             parts.Add(ScriptLibrary.Instructions(_scriptDir, ScriptLibrary.List(_scriptDir), Session.Mode is AgentMode.Edit or AgentMode.Auto));
         return string.Join("\n\n", parts);
@@ -767,10 +792,12 @@ public partial class SessionHost : ObservableObject
             allowed.AddRange(a);
             disallowed.AddRange(d);
         }
+        // Auto heißt: keine Rückfragen – auch nicht über Claudes eingebautes Frage-Tool.
+        if (Session.Mode == AgentMode.Auto && Provider == AiProvider.Claude) disallowed.Add("AskUserQuestion");
         Session.AllowedOnce.Clear();
         // Token sparen: Skript-Bibliothek (nur Ausführen/Schreiben in deren Ordner freigeben)
         _scriptDir = null;
-        if (_settings.Settings.Ai.Scripts.Enabled && !Session.RestrictedTools)
+        if (_settings.Settings.Ai.Scripts.Enabled && !Session.RestrictedTools && !Session.Sandbox)
         {
             try
             {
@@ -791,7 +818,10 @@ public partial class SessionHost : ObservableObject
             DisallowedTools = disallowed.Distinct().ToList(),
             AppendSystemPrompt = BuildSystemPrompt(),
             History = Provider == AiProvider.Copilot ? history.Take(history.Count - 1).ToList() : [],
-            AdditionalDirs = _scriptDir != null ? [_scriptDir] : [],
+            // Sandbox: Host-Pfade (Skript-Bibliothek) gibt es im Container nicht
+            AdditionalDirs = _scriptDir != null && !Session.Sandbox ? [_scriptDir] : [],
+            Sandbox = Session.Sandbox,
+            SandboxId = Session.Id,
         };
 
         try

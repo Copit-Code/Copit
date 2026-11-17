@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://copit-code.github.io/Copit/"><b>Website</b></a> ·
   <a href="https://github.com/Copit-Code/Copit/releases/latest"><b>Download</b></a> ·
   <a href="docs/erste-schritte.md">Erste Schritte</a> ·
   <a href="docs/funktionen.md">Funktionen</a> ·

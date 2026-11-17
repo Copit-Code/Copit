@@ -72,6 +72,8 @@ public class ChatSession
     /// <summary>Arbeitsordner (Repo oder eigener Worktree).</summary>
     public string? Cwd { get; set; }
     public bool Worktree { get; set; }
+    /// <summary>Läuft in der Docker-Sandbox (eigene Repo-Kopie, kein Netz außer KI-Endpunkten).</summary>
+    public bool Sandbox { get; set; }
     /// <summary>Commit beim Start – Basis für +/- Zeilen.</summary>
     public string? BaseSha { get; set; }
     /// <summary>Modell-Zeit (Generierung) – Agent-Zeit minus Tool-Ausführung.</summary>

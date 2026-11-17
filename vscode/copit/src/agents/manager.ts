@@ -11,6 +11,11 @@ export const QUESTION_INSTRUCTIONS =
   "Wenn du vom Nutzer eine Entscheidung oder fehlende Information brauchst, stelle die Rückfrage am ENDE deiner Antwort " +
   "in genau diesem Format:\n<rueckfrage>\nFrage: <Frage>\n- <Option 1>\n- <Option 2>\n</rueckfrage>\nFrage nur, wenn es wirklich nötig ist.";
 
+export const AUTO_INSTRUCTIONS =
+  "Du arbeitest im Auto-Modus: Der Nutzer ist nicht verfügbar und beantwortet keine Fragen. Stelle KEINE Rückfragen " +
+  "und warte nicht auf Bestätigung – auch nicht für einen Plan. Triff die nötigen Entscheidungen selbst, wähle bei Unklarheiten " +
+  "die naheliegendste Option, arbeite die Aufgabe vollständig ab und nenne deine Annahmen am Ende kurz.";
+
 export function extractQuestion(text: string): { clean: string; question?: string; options: string[] } {
   const m = /<rueckfrage>([\s\S]*?)<\/rueckfrage>/i.exec(text ?? "");
   if (!m) return { clean: text, options: [] };
@@ -169,7 +174,7 @@ export class AgentManager extends EventEmitter {
 
     const flags = flagsFor(this.rules(), a.repo, a.provider === "copilot");
     const allowed = [...flags.allowed, ...(a.allowedOnce ?? [])];
-    const sys = [cfg.instructions, a.ticket ? `Ticket: ${a.ticket}.` : "", a.branch ? `Du arbeitest auf Branch ${a.branch}.` : "", QUESTION_INSTRUCTIONS].filter(Boolean).join("\n\n");
+    const sys = [cfg.instructions, a.ticket ? `Ticket: ${a.ticket}.` : "", a.branch ? `Du arbeitest auf Branch ${a.branch}.` : "", a.mode === "auto" ? AUTO_INSTRUCTIONS : QUESTION_INSTRUCTIONS].filter(Boolean).join("\n\n");
     const history = a.provider === "copilot"
       ? this.db.events(a.id).filter((e) => e.kind === "user" || e.kind === "text").slice(-12).map((e) => `${e.kind === "user" ? "Nutzer" : "Assistent"}: ${(e.text ?? "").slice(0, 1500)}`).join("\n")
       : undefined;

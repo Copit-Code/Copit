@@ -9,7 +9,8 @@ using Copit.Services;
 namespace Copit.ViewModels;
 
 /// <summary>Parameter um eine Session zu öffnen (optional mit Start-Prompt).</summary>
-public record SessionRequest(CopitProject Project, string? Prompt = null, string? DisplayText = null, bool NewSession = false, JiraIssue? Issue = null);
+public record SessionRequest(CopitProject Project, string? Prompt = null, string? DisplayText = null, bool NewSession = false, JiraIssue? Issue = null,
+    AgentMode? Mode = null, string? AutoPrompt = null);
 
 public partial class SessionViewModel : ObservableObject, IActivatable
 {
@@ -97,10 +98,15 @@ public partial class SessionViewModel : ObservableObject, IActivatable
             case SessionRequest req:
                 Project = req.Project;
                 if (req.NewSession || Host == null || Host.Session.ProjectId != req.Project.Id || Host.IsRunning)
-                    Host = _manager.Create(req.Project);
+                {
+                    // Den in der Session gewählten Modus (z. B. Auto) übernehmen – vor dem ersten Lauf, nicht erst danach.
+                    var mode = req.Mode ?? Host?.Mode;
+                    Host = _manager.Create(req.Project, mode: mode);
+                }
                 LoadSessions();
                 if (req.Issue != null) _ = Git.CreateBranchForIssueAsync(req.Issue);
-                if (!string.IsNullOrWhiteSpace(req.Prompt)) _ = Host.SendAsync(req.Prompt, req.DisplayText);
+                var prompt = Host.Mode == AgentMode.Auto && !string.IsNullOrWhiteSpace(req.AutoPrompt) ? req.AutoPrompt : req.Prompt;
+                if (!string.IsNullOrWhiteSpace(prompt)) _ = Host.SendAsync(prompt, req.DisplayText);
                 break;
             case SessionHost h:
                 Project = h.Project;

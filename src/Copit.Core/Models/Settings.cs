@@ -83,6 +83,8 @@ public class AiSettings
     public DailyLimit ClaudeLimit { get; set; } = new() { Unit = "usd" };
     /// <summary>Tageslimit für Copit-Agents mit Copilot (0 = aus). Copilot meldet keine Kosten → Stunden oder Läufe.</summary>
     public DailyLimit CopilotLimit { get; set; } = new() { Unit = "hours" };
+    /// <summary>Docker-Sandbox für Agents (pro Agent wählbar).</summary>
+    public SandboxSettings Sandbox { get; set; } = new();
     /// <summary>Token sparen: Skript-Bibliothek für wiederkehrende Aufgaben.</summary>
     public ScriptLibrarySettings Scripts { get; set; } = new();
 }
@@ -128,4 +130,15 @@ public class RuleSet
     public string Name { get; set; } = "";
     public string Text { get; set; } = "";
     public bool Enabled { get; set; } = true;
+}
+
+/// <summary>Docker-Sandbox: Agent läuft im Container ohne Netz – nur die KI-Endpunkte sind über einen Proxy erreichbar.</summary>
+public class SandboxSettings
+{
+    /// <summary>Häkchen „In Sandbox“ beim neuen Agent vorbelegen.</summary>
+    public bool DefaultOn { get; set; }
+    /// <summary>Docker-Image (leer = copit-sandbox:latest, wird bei Bedarf gebaut). Eigenes Image z. B. mit .NET-SDK für Tests.</summary>
+    public string Image { get; set; } = "";
+    /// <summary>Erlaubte Ziele des Proxys (Squid dstdomain, „.domain“ = inkl. Subdomains). Leer = Standard für Claude/Copilot.</summary>
+    public List<string> AllowedHosts { get; set; } = [];
 }

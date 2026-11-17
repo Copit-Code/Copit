@@ -16,10 +16,11 @@ public static partial class QuestionParser
         "Optionen sind optional. Frage nur, wenn es wirklich nötig ist. Stelle alle offenen Fragen gesammelt in EINER Antwort, " +
         "jede in einem eigenen Block – der Nutzer beantwortet sie zusammen.";
 
-    /// <summary>Zusatz für den Auto-Modus: möglichst selbst entscheiden.</summary>
+    /// <summary>Ersetzt <see cref="Instructions"/> im Auto-Modus: keine Rückfragen, selbst entscheiden.</summary>
     public const string AutoInstructions =
-        "Du arbeitest im Auto-Modus: Triff naheliegende Entscheidungen selbst und nenne deine Annahmen kurz. " +
-        "Stelle Rückfragen nur, wenn du ohne die Antwort nicht sinnvoll weiterarbeiten kannst.";
+        "Du arbeitest im Auto-Modus: Der Nutzer ist nicht verfügbar und beantwortet keine Fragen. Stelle KEINE Rückfragen " +
+        "und warte nicht auf Bestätigung – auch nicht für einen Plan. Triff die nötigen Entscheidungen selbst, wähle bei Unklarheiten " +
+        "die naheliegendste Option, arbeite die Aufgabe vollständig ab und nenne deine Annahmen am Ende kurz.";
 
     /// <summary>Baut aus den Antworten auf mehrere Rückfragen eine Nachricht. Unbeantwortete entscheidet die KI selbst.</summary>
     public static string ComposeAnswers(IReadOnlyList<(string Question, string? Answer)> answers)
