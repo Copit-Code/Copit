@@ -72,3 +72,60 @@ public class QuestionAnswerTests
         Assert.Contains("3. Sprache?\n   → Deutsch", msg);
     }
 }
+
+public class CardMovedTriggerTests
+{
+    private static Copit.Core.Models.Automation Rule(string from, string to) => new()
+    {
+        Trigger = "agent.moved", Enabled = true, TriggerParams = new() { ["from"] = from, ["to"] = to },
+    };
+
+    private static Copit.Core.Services.AutomationEvent Moved(string from, string to) =>
+        new("agent.moved", new() { ["from"] = from, ["to"] = to }, null);
+
+    [Theory]
+    [InlineData("Review", "Done", true)]
+    [InlineData("", "Done", true)]            // von beliebiger Spalte
+    [InlineData("Review", "", true)]          // nach beliebiger Spalte
+    [InlineData("InProgress", "Done", false)] // kam nicht aus Review
+    [InlineData("Review", "Failed", false)]
+    public void FromAndToAreChecked(string from, string to, bool hit)
+        => Assert.Equal(hit, Copit.Core.Services.AutomationService.TriggerMatches(Rule(from, to), Moved("Review", "Done")));
+
+    [Fact]
+    public void TitlesAndEnumNamesAreBothAccepted()
+    {
+        Assert.True(Copit.Core.Services.AutomationService.SameColumn("In Progress", "InProgress"));
+        Assert.True(Copit.Core.Services.AutomationService.SameColumn("inprogress", "In Progress"));
+        Assert.False(Copit.Core.Services.AutomationService.SameColumn("Done", "Review"));
+    }
+}
+
+public class PushBranchTests
+{
+    [Fact]
+    public async Task PushesTheGivenBranchEvenIfAnotherIsCheckedOut()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "copit-push-" + Guid.NewGuid().ToString("N")[..8]);
+        var origin = Path.Combine(root, "origin.git"); var work = Path.Combine(root, "work");
+        Directory.CreateDirectory(root);
+        async Task Git(string dir, params string[] a)
+        {
+            var r = await Copit.Core.Services.ProcessRunner.RunAsync("git", ["-C", dir, .. a]);
+            Assert.True(r.Ok, r.StdErr);
+        }
+        await Git(root, "init", "--bare", "-q", origin);
+        await Git(root, "init", "-q", "-b", "main", work);
+        await Git(work, "config", "user.email", "t@t"); await Git(work, "config", "user.name", "t");
+        await Git(work, "commit", "--allow-empty", "-qm", "init");
+        await Git(work, "remote", "add", "origin", origin);
+        await Git(work, "branch", "feature/ST-1");   // Karte-Branch, nicht ausgecheckt
+
+        var git = new Copit.Core.Services.GitService();
+        await git.PushBranchAsync(work, "feature/ST-1");
+        var r = await Copit.Core.Services.ProcessRunner.RunAsync("git", ["-C", origin, "branch", "--list", "feature/ST-1"]);
+        Assert.Contains("feature/ST-1", r.StdOut);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => git.PushBranchAsync(work, "gibts/nicht"));
+        try { Directory.Delete(root, true); } catch { }
+    }
+}

@@ -163,8 +163,22 @@ public class AutomationsView : ContentView, IActivatable
             Render();
         }));
         foreach (var p in tdef.Params)
+        {
+            if (d.Trigger == "agent.moved")
+            {
+                // Spalten als Auswahl statt Freitext
+                var cols = AgentStatusInfo.Columns;
+                var items = new List<string> { "(beliebig)" };
+                items.AddRange(cols.Select(c => c.Title));
+                var cur = d.TriggerParams.GetValueOrDefault(p.Key, "");
+                var idx = Array.FindIndex(cols, c => AutomationService.SameColumn(cur, c.Status.ToString()) && cur.Length > 0);
+                var key = p.Key;
+                trig.Add(Row((Text(p.Label, 12, "Text2"), Px(160)), (Pick(items, idx + 1, i => d.TriggerParams[key] = i == 0 ? "" : cols[i - 1].Status.ToString()), Star)));
+                continue;
+            }
             trig.Add(Row((Text(p.Label, 12, "Text2"), Px(160)), (Input(d.TriggerParams.GetValueOrDefault(p.Key, ""), p.Placeholder, v => d.TriggerParams[p.Key] = v), Star)));
-        if (d.Trigger == "agent.moved") trig.Add(Text("Spalten: " + string.Join(", ", Enum.GetNames<AgentStatus>()), 10.5, "Muted"));
+        }
+        if (d.Trigger == "agent.moved") trig.Add(Text("Löst aus, wenn du eine Karte auf dem Board verschiebst. Platzhalter: {{branch}}, {{ticket}}, {{from}}, {{to}}.", 10.5, "Muted"));
         page.Add(Block("WENN", null, [trig]));
 
         // UND

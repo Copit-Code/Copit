@@ -101,7 +101,8 @@ Der Key wird exakt abgeglichen: `SHOP-1` trifft nicht `SHOP-12`.
 WENN Trigger [UND Bedingungen] DANN Aktionen, mit **Testlauf**.
 
 - **Trigger:**
-  - Agent startet, ist fertig, braucht Input, ist fehlgeschlagen oder gestoppt; Karte verschoben
+  - Agent startet, ist fertig, braucht Input, ist fehlgeschlagen oder gestoppt
+  - Karte verschoben, mit Von- und Nach-Spalte (z. B. Review → Done)
   - Neuer Commit, Push, neuer Branch
   - Pipeline fehlgeschlagen oder erfolgreich
   - Ticket-Status geändert, Ticket zugewiesen (per JQL eingrenzbar)
@@ -109,11 +110,13 @@ WENN Trigger [UND Bedingungen] DANN Aktionen, mit **Testlauf**.
 - **Aktionen:**
   - Status setzen, neuen Agent starten, Agent fortsetzen, benachrichtigen
   - Jira-Kommentar, Jira-Status ändern, Zeit buchen, Stunden-Check
-  - Commit, Push, Branch anlegen, Merge Request
+  - Commit, Push (auch gezielt den Branch der Karte), Branch anlegen, Merge Request
   - Doku aktualisieren, KI fragen, Befehl ausführen
   - Aktionen aus Extensions (`ext:<id>/<aktion>`)
 
-Platzhalter wie `{{ticket}}`, `{{title}}`, `{{summary}}` und `{{branch}}` übernehmen Werte aus dem Ereignis.
+Platzhalter wie `{{ticket}}`, `{{title}}`, `{{summary}}`, `{{branch}}`, `{{from}}` und `{{to}}` übernehmen Werte aus dem Ereignis.
+
+Beispiel: WENN *Karte verschoben* von **Review** nach **Done**, DANN *Push* mit Branch `{{branch}}`.
 
 Mitgelieferte Rezepte, zum Teil ausgeschaltet:
 - Fertig → Jira-Kommentar
