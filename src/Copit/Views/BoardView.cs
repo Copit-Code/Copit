@@ -139,6 +139,7 @@ public class BoardView : ContentView, IActivatable
         if (a.Ticket != null) meta.Add(Mono(a.Ticket, 10.5, "Accent", true));
         if (a.Branch != null) meta.Add(HStack(4, Glyph("branch", 11, "Muted"), Mono(a.Branch, 10.5, "Muted")));
         if (a.Worktree) meta.Add(Badge("worktree", C("Cyan")));
+        if (a.Sandbox) meta.Add(Badge("sandbox", C("Green")));
         var sub = Text($"{p?.Name ?? "?"} · {a.Provider}{(string.IsNullOrEmpty(h.ModelName) && string.IsNullOrEmpty(a.Model) ? "" : " · " + Core.Services.Pricing.PrettyModel(string.IsNullOrEmpty(h.ModelName) ? a.Model : h.ModelName))}", 11, "Muted");
 
         var body = Stack(6, top, sub);
@@ -193,6 +194,7 @@ public class BoardView : ContentView, IActivatable
         var opts = new List<string> { "Öffnen" };
         if (h.IsRunning) opts.Add("Stoppen");
         if (!string.IsNullOrWhiteSpace(a.Ticket)) opts.Add("Code-Änderungen des Tickets");
+        if ((a.Sandbox || a.Worktree) && a.Cwd != null && Directory.Exists(a.Cwd)) opts.Add("Arbeitsordner öffnen");
         opts.AddRange(AgentStatusInfo.Columns.Where(c => c.Status != a.Status).Select(c => "→ " + c.Title));
         opts.Add("Archivieren");
         opts.Add("Löschen");
@@ -201,6 +203,12 @@ public class BoardView : ContentView, IActivatable
         if (pick == "Öffnen") _nav.Go(Routes.Session, h);
         else if (pick == "Stoppen") h.Stop();
         else if (pick == "Code-Änderungen des Tickets") { _nav.Go(Routes.Changes, new ChangesRequest(a.ProjectId, a.Ticket)); return; }
+        else if (pick == "Arbeitsordner öffnen")
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{a.Cwd}\"") { UseShellExecute = true }); }
+            catch (Exception e) { _toast.Error(e, "Ordner öffnen"); }
+            return;
+        }
         else if (pick.StartsWith("→ ")) Move(a, AgentStatusInfo.Columns.First(c => c.Title == pick[2..]).Status);
         else if (pick == "Archivieren") _mgr.Archive(a);
         else if (pick == "Löschen" && await Dialogs.Confirm("Agent löschen?", $"{a.Title}{(a.Worktree ? "\nDer Worktree wird ebenfalls entfernt." : "")}", "Löschen"))
@@ -219,6 +227,7 @@ public class BoardView : ContentView, IActivatable
         var provider = _settings.Settings.Ai.DefaultProvider;
         var mode = AgentMode.Edit;
         var worktree = _settings.Settings.Ai.UseWorktrees;
+        var sandbox = _settings.Settings.Ai.Sandbox.DefaultOn;
         var startNow = true;
         List<string> extraTools = [];
         var templates = _ext.AgentTemplates.ToList();
@@ -254,17 +263,21 @@ public class BoardView : ContentView, IActivatable
                 (Stack(4, Caption("Anbieter"), Seg([("Claude", "Claude"), ("Copilot", "Copilot")], provider.ToString(), k => { provider = Enum.Parse<AiProvider>(k); Build(); })), Auto),
                 (Stack(4, Caption("Modus"), Seg([("Ask", "Fragen"), ("Plan", "Plan"), ("Edit", "Edit"), ("Auto", "Auto")], mode.ToString(), k => { mode = Enum.Parse<AgentMode>(k); Build(); })), Auto),
                 (Stack(4, Caption("Modell"), Input(model, provider == AiProvider.Claude ? "Standard (z. B. opus)" : "Standard", v => model = v)), Star)));
-            form.Add(Row((Toggle(worktree, v => worktree = v), Auto), (Wrap("Eigener git worktree (parallel arbeiten, ohne deinen Branch zu wechseln)", 12, "Text2"), Star)));
+            form.Add(Row((Toggle(sandbox, v => { sandbox = v; Build(); }), Auto), (Stack(2,
+                Text("In Sandbox arbeiten (Docker)", 12.5, "Text", true),
+                Wrap("Eigene Repo-Kopie im Container ohne Netzwerk – kein Internet, keine internen Dienste, nur die KI. Danach kannst du die Kopie selbst testen; gepusht wird von außen.", 11.5, "Muted")), Star)));
+            if (!sandbox)
+                form.Add(Row((Toggle(worktree, v => worktree = v), Auto), (Wrap("Eigener git worktree (parallel arbeiten, ohne deinen Branch zu wechseln)", 12, "Text2"), Star)));
             form.Add(Row((Toggle(startNow, v => startNow = v), Auto), (Wrap("Sofort starten (sonst bleibt die Karte in der Inbox)", 12, "Text2"), Star)));
             var create = Primary("Agent anlegen", async () =>
             {
                 if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(prompt)) { _toast.Show("Titel oder Auftrag fehlt", "", NoticeLevel.Warning); return; }
                 if (string.IsNullOrWhiteSpace(title)) title = prompt.Split('\n')[0] is var t && t.Length > 60 ? t[..60] : prompt.Split('\n')[0];
-                if (string.IsNullOrWhiteSpace(branch) && !string.IsNullOrWhiteSpace(ticket) && worktree) branch = $"feature/{ticket.Trim().ToUpperInvariant()}";
+                if (string.IsNullOrWhiteSpace(branch) && !string.IsNullOrWhiteSpace(ticket) && (worktree || sandbox)) branch = $"feature/{ticket.Trim().ToUpperInvariant()}";
                 Close();
                 try
                 {
-                    var h = await _mgr.CreateAgentAsync(project, title, ticket, branch, mode, provider, model.Trim(), worktree);
+                    var h = await _mgr.CreateAgentAsync(project, title, ticket, branch, mode, provider, model.Trim(), worktree, sandbox);
                     if (extraTools.Count > 0) { h.Session.AllowedTools.AddRange(extraTools.Where(x => !h.Session.AllowedTools.Contains(x))); h.Save(); }
                     if (h.Session.Error != null) _toast.Show("Hinweis", h.Session.Error, NoticeLevel.Warning);
                     if (startNow && !string.IsNullOrWhiteSpace(prompt))

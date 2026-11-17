@@ -59,6 +59,10 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
     [ObservableProperty] public partial string Instructions { get; set; } = "";
     // Token sparen: Skript-Bibliothek
     [ObservableProperty] public partial bool ScriptsEnabled { get; set; }
+    [ObservableProperty] public partial bool SandboxDefault { get; set; }
+    [ObservableProperty] public partial string SandboxImage { get; set; } = "";
+    [ObservableProperty] public partial string SandboxHosts { get; set; } = "";
+    [ObservableProperty] public partial string SandboxTest { get; set; } = "";
     [ObservableProperty] public partial bool ScriptsPerProject { get; set; }
     public System.Collections.ObjectModel.ObservableCollection<ScriptInfo> Scripts { get; } = [];
     [ObservableProperty] public partial string ScriptsInfo { get; set; } = "";
@@ -70,9 +74,11 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
 
     public string DataFolder => AppPaths.Root;
 
-    public SettingsViewModel(SettingsService s, ConnectionHub hub, AgentRunnerFactory runners, ToastService toast, ShellViewModel shell)
+    private readonly SandboxService _sandbox;
+
+    public SettingsViewModel(SettingsService s, ConnectionHub hub, AgentRunnerFactory runners, ToastService toast, ShellViewModel shell, SandboxService sandbox)
     {
-        _s = s; _hub = hub; _runners = runners; _toast = toast; _shell = shell;
+        _s = s; _hub = hub; _runners = runners; _toast = toast; _shell = shell; _sandbox = sandbox;
         foreach (var d in new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday })
             WorkDays.Add(new WorkDayToggle { Day = d, Label = De.DateTimeFormat.GetAbbreviatedDayName(d) });
     }
@@ -89,6 +95,8 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
         CopilotPath = st.Ai.CopilotPath; CopilotModel = st.Ai.CopilotModel; CopilotArgs = st.Ai.CopilotExtraArgs; CopilotRequestPrice = st.Ai.CopilotPremiumRequestUsd.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
         CopilotCreditPrice = st.Ai.CopilotAiCreditUsd.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
         Instructions = st.Ai.GlobalInstructions;
+        SandboxDefault = st.Ai.Sandbox.DefaultOn; SandboxImage = st.Ai.Sandbox.Image;
+        SandboxHosts = string.Join("\n", st.Ai.Sandbox.AllowedHosts.Count > 0 ? st.Ai.Sandbox.AllowedHosts : [.. SandboxService.DefaultAllowedHosts]);
         ScriptsEnabled = st.Ai.Scripts.Enabled; ScriptsPerProject = st.Ai.Scripts.Scope == "project";
         LoadScripts();
         MinHours = st.Time.MinHoursPerDay.ToString("0.##", De); DayStart = st.Time.DayStart; Rounding = st.Time.RoundingMinutes.ToString();
@@ -121,6 +129,9 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
         if (double.TryParse(CopilotCreditPrice.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var creditPrice) && creditPrice >= 0)
             st.Ai.CopilotAiCreditUsd = creditPrice;
         st.Ai.GlobalInstructions = Instructions;
+        st.Ai.Sandbox.DefaultOn = SandboxDefault; st.Ai.Sandbox.Image = SandboxImage.Trim();
+        var hosts = SandboxHosts.Replace("\r", "").Split('\n', ',', ' ').Select(h => h.Trim()).Where(h => h.Length > 0).Distinct().ToList();
+        st.Ai.Sandbox.AllowedHosts = hosts.SequenceEqual(SandboxService.DefaultAllowedHosts) ? [] : hosts;
         st.Ai.Scripts.Enabled = ScriptsEnabled; st.Ai.Scripts.Scope = ScriptsPerProject ? "project" : "global";
         if (double.TryParse(MinHours.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var h)) st.Time.MinHoursPerDay = h;
         if (TimeOnly.TryParse(DayStart, out _)) st.Time.DayStart = DayStart.Trim();
@@ -203,6 +214,21 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
         CopilotTest = "Teste…";
         var (ok, info) = await _runners.Copilot.CheckAsync();
         CopilotTest = (ok ? "✓ " : "✗ ") + info;
+    }
+
+    /// <summary>Docker prüfen und Sandbox (Image, internes Netz, Proxy) einrichten.</summary>
+    [RelayCommand]
+    private async Task TestSandboxAsync()
+    {
+        Apply(); await _s.SaveAsync();
+        SandboxTest = "Prüfe Docker…";
+        try
+        {
+            await _sandbox.EnsureAsync(m => MainThread.BeginInvokeOnMainThread(() => SandboxTest = m));
+            var (_, info) = await _sandbox.CheckAsync();
+            SandboxTest = $"✓ {info} · Image {_sandbox.Image} · internes Netz + Proxy bereit";
+        }
+        catch (Exception e) { SandboxTest = "✗ " + e.Message; }
     }
 
     [RelayCommand]

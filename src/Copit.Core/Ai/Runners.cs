@@ -9,7 +9,37 @@ namespace Copit.Core.Ai;
 public abstract class CliRunnerBase : IAgentRunner
 {
     protected readonly SettingsService Settings;
-    protected CliRunnerBase(SettingsService settings) => Settings = settings;
+    protected readonly SandboxService? SandboxSvc;
+    protected CliRunnerBase(SettingsService settings, SandboxService? sandbox = null) { Settings = settings; SandboxSvc = sandbox; }
+
+    /// <summary>Sandbox vorbereiten (Image, Netz, Proxy). Fehlertext oder null.</summary>
+    protected async Task<string?> PrepareSandboxAsync(CancellationToken ct)
+    {
+        if (SandboxSvc == null) return "Sandbox nicht verfügbar.";
+        try { await SandboxSvc.EnsureAsync(null, ct); return null; }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception e) { return e.Message; }
+    }
+
+    /// <summary>CLI-Aufruf in <c>docker run</c> verpacken. Abbruch beendet den Container.</summary>
+    protected async Task<(CliCommand Cmd, List<string> Args, CancellationTokenRegistration Kill)> SandboxCommandAsync(AgentRequest r, List<string> args, CancellationToken ct)
+    {
+        (string, string)? gitUser = null;
+        try
+        {
+            var n = await ProcessRunner.RunAsync("git", ["config", "--get", "user.name"], r.WorkingDirectory, ct: ct);
+            var m = await ProcessRunner.RunAsync("git", ["config", "--get", "user.email"], r.WorkingDirectory, ct: ct);
+            if (n.Ok && m.Ok) gitUser = (n.StdOut.Trim(), m.StdOut.Trim());
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { }
+        var name = SandboxService.ContainerName(string.IsNullOrEmpty(r.SandboxId) ? Guid.NewGuid().ToString("N") : r.SandboxId);
+        await SandboxService.KillAsync(name); // Rest eines abgebrochenen Laufs
+        var full = SandboxService.RunArgs(SandboxSvc!.Image, name, r.WorkingDirectory ?? ".", Provider, ExeName, args,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Environment.GetEnvironmentVariable, gitUser);
+        var kill = ct.Register(() => _ = SandboxService.KillAsync(name));
+        return (new CliCommand("docker", [], "docker"), full, kill);
+    }
 
     public abstract AiProvider Provider { get; }
     protected abstract string ExeName { get; }
@@ -70,7 +100,7 @@ public abstract class CliRunnerBase : IAgentRunner
 }
 
 /// <summary>Claude Code CLI im Print-Modus mit stream-json.</summary>
-public class ClaudeCliRunner(SettingsService settings) : CliRunnerBase(settings)
+public class ClaudeCliRunner(SettingsService settings, SandboxService? sandbox = null) : CliRunnerBase(settings, sandbox)
 {
     public override AiProvider Provider => AiProvider.Claude;
     protected override string ExeName => "claude";
@@ -103,14 +133,22 @@ public class ClaudeCliRunner(SettingsService settings) : CliRunnerBase(settings)
     public override async IAsyncEnumerable<AgentEvent> RunAsync(AgentRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         var cmd = Resolve();
-        if (cmd == null)
+        if (cmd == null && !request.Sandbox)
         {
             yield return new AgentResult(true, "Claude CLI nicht gefunden. Installiere sie (`npm i -g @anthropic-ai/claude-code` oder nativer Installer) oder hinterlege den Pfad in den Einstellungen.", 0, 0, 0, [], null, "error");
             yield break;
         }
         var args = BuildArgs(request, Settings.Settings.Ai.ClaudeExtraArgs);
+        CancellationTokenRegistration kill = default;
+        if (request.Sandbox)
+        {
+            yield return new AgentStatusLine("Sandbox wird vorbereitet…");
+            if (await PrepareSandboxAsync(ct) is { } err) { yield return new AgentResult(true, "Sandbox: " + err, 0, 0, 0, [], null, "error"); yield break; }
+            (cmd, args, kill) = await SandboxCommandAsync(request, args, ct);
+        }
+        using var _ = kill;
         bool gotResult = false;
-        await foreach (var e in Pump(cmd, args, request.WorkingDirectory, request.Prompt,
+        await foreach (var e in Pump(cmd!, args, request.WorkingDirectory, request.Prompt,
                            ClaudeStreamParser.Parse,
                            line => line.Length > 0 ? new AgentStatusLine(line) : null,
                            (res, err) => null, ct))
@@ -127,7 +165,7 @@ public class ClaudeCliRunner(SettingsService settings) : CliRunnerBase(settings)
 }
 
 /// <summary>GitHub Copilot CLI im Prompt-Modus (Plain-Text-Ausgabe).</summary>
-public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings)
+public class CopilotCliRunner(SettingsService settings, SandboxService? sandbox = null) : CliRunnerBase(settings, sandbox)
 {
     private const int MaxPromptChars = 24_000;
     public override AiProvider Provider => AiProvider.Copilot;
@@ -162,7 +200,7 @@ public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings
     public override async IAsyncEnumerable<AgentEvent> RunAsync(AgentRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         var cmd = Resolve();
-        if (cmd == null)
+        if (cmd == null && !request.Sandbox)
         {
             yield return new AgentResult(true, "Copilot CLI nicht gefunden. Installiere sie mit `npm i -g @github/copilot` oder hinterlege den Pfad in den Einstellungen.", 0, 0, 0, [], null, "error");
             yield break;
@@ -175,12 +213,20 @@ public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings
         if (!string.IsNullOrWhiteSpace(model)) { args.Add("--model"); args.Add(model); }
         foreach (var d in request.AdditionalDirs) { args.Add("--add-dir"); args.Add(d); }
         args.AddRange(ProcessRunner.SplitArgs(Settings.Settings.Ai.CopilotExtraArgs));
+        CancellationTokenRegistration kill = default;
+        if (request.Sandbox)
+        {
+            yield return new AgentStatusLine("Sandbox wird vorbereitet…");
+            if (await PrepareSandboxAsync(ct) is { } err) { yield return new AgentResult(true, "Sandbox: " + err, 0, 0, 0, [], null, "error"); yield break; }
+            (cmd, args, kill) = await SandboxCommandAsync(request, args, ct);
+        }
+        using var _ = kill;
 
         yield return new AgentInit("", string.IsNullOrWhiteSpace(model) ? "copilot (Standard)" : model, [], request.Mode.ToString());
         var full = new StringBuilder();
         var usage = new CopilotUsageParser();
         var started = DateTime.Now;
-        await foreach (var e in Pump(cmd, args, request.WorkingDirectory, null,
+        await foreach (var e in Pump(cmd!, args, request.WorkingDirectory, null,
                            line =>
                            {
                                var clean = GitLabClient.StripAnsi(line);
