@@ -315,6 +315,30 @@
                                 <Button Grid.Column="1" Text="Ändern" Style="{StaticResource Chip}" Command="{Binding PickTicketAccountCommand}" />
                             </Grid>
                         </VerticalStackLayout>
+
+                        <!-- Pflichtfelder der Jira-Maske (z. B. Availability, Licensing) -->
+                        <VerticalStackLayout Spacing="6" IsVisible="{Binding HasTicketFields}">
+                            <Label Text="PFLICHTFELDER IN JIRA" Style="{StaticResource Caption}" />
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding TicketFields}" Spacing="6">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnDefinitions="190,*" ColumnSpacing="10">
+                                            <Label Text="{Binding Name}" FontSize="12.5" VerticalOptions="Center" LineBreakMode="TailTruncation" />
+                                            <Picker Grid.Column="1" ItemsSource="{Binding Options}" SelectedItem="{Binding Selected}" IsVisible="{Binding HasOptions}" Title="Bitte wählen" />
+                                            <Entry Grid.Column="1" Text="{Binding Text}" IsVisible="{Binding IsText}" Placeholder="Wert eingeben" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                            <Label Text="Die gewählten Werte merkt sich Copit für neue Tickets in diesem Projekt." FontSize="11" TextColor="{StaticResource Muted}" />
+                        </VerticalStackLayout>
+
+                        <!-- Prüfen: Berechtigung, Typ, Felder -->
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <Button Text="In Jira prüfen" Style="{StaticResource Chip}" Command="{Binding CheckTicketCommand}" VerticalOptions="Start" />
+                            <Label Grid.Column="1" Text="{Binding CheckText}" FontSize="11.5" FontFamily="Cascadia Mono" TextColor="{StaticResource Text2}" LineBreakMode="WordWrap"
+                                   IsVisible="{Binding CheckText, Converter={StaticResource HasText}}" />
+                        </Grid>
                         <VerticalStackLayout Spacing="4">
                             <Label Text="BESCHREIBUNG" Style="{StaticResource Caption}" />
                             <Editor Text="{Binding TicketDescription}" AutoSize="TextChanges" MinimumHeightRequest="160" FontSize="12.5" />

@@ -21,6 +21,19 @@ public class NoteGroup : List<ProjectNote>
     public string Title { get; init; } = "";
 }
 
+/// <summary>Pflichtfeld der Jira-Anlege-Maske im Ticket-Dialog.</summary>
+public partial class TicketFieldVM : ObservableObject
+{
+    public JiraCreateField Field { get; init; } = null!;
+    public string Name => Field.Name + (Field.Required ? " *" : "");
+    public List<string> Options => [.. Field.Options.Select(o => o.Label)];
+    public bool HasOptions => Field.Options.Count > 0;
+    public bool IsText => !HasOptions;
+    [ObservableProperty] public partial string? Selected { get; set; }
+    [ObservableProperty] public partial string Text { get; set; } = "";
+    public string Value => (HasOptions ? Selected : Text)?.Trim() ?? "";
+}
+
 public partial class ProjectDetailViewModel : ObservableObject, IActivatable
 {
     private readonly DataService _data;
@@ -50,6 +63,12 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     /// <summary>Ticket-Typen des Projekts aus Jira („Name · ID“); Fallback ohne Jira.</summary>
     public ObservableCollection<string> IssueTypes { get; } = ["Task", "Story", "Bug"];
     [ObservableProperty] public partial string IssueTypesInfo { get; set; } = "";
+    private List<JiraIssueType> _issueTypes = [];
+    /// <summary>Pflichtfelder der Anlege-Maske, die Copit nicht selbst füllt (z. B. Availability, Licensing).</summary>
+    public ObservableCollection<TicketFieldVM> TicketFields { get; } = [];
+    public bool HasTicketFields => TicketFields.Count > 0;
+    [ObservableProperty] public partial string CheckText { get; set; } = "";
+    [ObservableProperty] public partial bool Checking { get; set; }
 
     [ObservableProperty] public partial CopitProject? Project { get; set; }
     [ObservableProperty] public partial JiraIssue? Epic { get; set; }
@@ -292,6 +311,7 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         TicketType = !string.IsNullOrWhiteSpace(Project?.IssueType) ? Project!.IssueType : _settings.Settings.Jira.DefaultIssueType;
         _ = LoadIssueTypesAsync();
         TicketAccount = ""; TicketAccountSource = "";
+        CheckText = ""; TicketFields.Clear(); OnPropertyChanged(nameof(HasTicketFields));
         OnPropertyChanged(nameof(ShowTicketAccount));
         ShowTicket = true;
         if (ShowTicketAccount) _ = ResolveTicketAccountAsync();
@@ -306,7 +326,9 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         IssueTypesInfo = "Lade Ticket-Typen…";
         try
         {
+            await EnsureJiraFieldsAsync();
             var types = (await _hub.Jira.GetIssueTypesAsync(Project.JiraProjectKey)).Where(t => !t.Subtask).ToList();
+            _issueTypes = types;
             if (types.Count == 0) { IssueTypesInfo = ""; return; }
             IssueTypes.Clear();
             foreach (var t in types) IssueTypes.Add(t.Label);
@@ -315,6 +337,7 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
             var match = types.FirstOrDefault(t => cur["id"]?.ToString() == t.Id || string.Equals(cur["name"]?.ToString(), t.Name, StringComparison.OrdinalIgnoreCase));
             TicketType = match?.Label ?? types[0].Label;
             IssueTypesInfo = match == null && cur["name"] != null ? $"„{cur["name"]}“ gibt es hier nicht – {types[0].Name} gewählt" : "";
+            await LoadTicketFieldsAsync();
         }
         catch (Exception e) { IssueTypesInfo = "Ticket-Typen nicht ladbar: " + e.Message; }
     }
@@ -360,7 +383,88 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         TicketAccountSource = "gewählt";
     }
     [RelayCommand] private void SetTicketProvider(string p) => TicketProvider = Enum.Parse<AiProvider>(p);
-    [RelayCommand] private void SetTicketType(string t) => TicketType = t;
+    [RelayCommand] private void SetTicketType(string t) { TicketType = t; _ = LoadTicketFieldsAsync(); }
+
+    /// <summary>Epic-Link- und Account-Feld aus Jira erkennen und in den Einstellungen speichern, wenn dort noch nichts steht.</summary>
+    private async Task EnsureJiraFieldsAsync()
+    {
+        var j = _settings.Settings.Jira;
+        if (_hub.Jira == null || (!string.IsNullOrWhiteSpace(j.EpicLinkFieldId) && !string.IsNullOrWhiteSpace(j.AccountFieldId))) return;
+        try
+        {
+            var ids = await _hub.Jira.DetectFieldsAsync();
+            var found = new List<string>();
+            if (string.IsNullOrWhiteSpace(j.EpicLinkFieldId) && ids.EpicLink != null) { j.EpicLinkFieldId = ids.EpicLink; found.Add($"Epic Link = {ids.EpicLink}"); }
+            if (string.IsNullOrWhiteSpace(j.AccountFieldId) && ids.Account != null) { j.AccountFieldId = ids.Account; found.Add($"Account = {ids.Account}"); }
+            if (found.Count == 0) return;
+            await _settings.SaveAsync();
+            _toast.Success("Jira-Felder erkannt und gespeichert", string.Join(" · ", found));
+            OnPropertyChanged(nameof(ShowTicketAccount));
+            if (ShowTicketAccount && string.IsNullOrWhiteSpace(TicketAccount)) _ = ResolveTicketAccountAsync();
+        }
+        catch { /* ohne Rechte auf die Feldliste: Einstellungen bleiben wie sie sind */ }
+    }
+
+    private string? SelectedTypeId()
+    {
+        var r = JiraClient.IssueTypeRef(TicketType);
+        return r["id"]?.ToString() ?? _issueTypes.FirstOrDefault(t => string.Equals(t.Name, r["name"]?.ToString(), StringComparison.OrdinalIgnoreCase))?.Id;
+    }
+
+    /// <summary>Pflichtfelder der Maske für den gewählten Typ laden und mit den gemerkten Werten des Projekts vorbelegen.</summary>
+    private async Task LoadTicketFieldsAsync()
+    {
+        if (Project == null || _hub.Jira == null || SelectedTypeId() is not { } typeId) return;
+        try
+        {
+            var fields = await _hub.Jira.GetCreateFieldsAsync(Project.JiraProjectKey, typeId);
+            var ids = await _hub.Jira.DetectFieldsAsync().ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : null);
+            SetTicketFields(JiraClient.MissingRequired(fields, ids, _settings.Settings.Jira.AccountFieldId));
+        }
+        catch { /* Maske nicht lesbar → Felder bleiben leer, „Prüfen“ zeigt den Grund */ }
+    }
+
+    private void SetTicketFields(IEnumerable<JiraCreateField> fields)
+    {
+        TicketFields.Clear();
+        foreach (var f in fields)
+        {
+            var vm = new TicketFieldVM { Field = f };
+            if (Project?.FieldDefaults.TryGetValue(f.Id, out var d) == true)
+            {
+                if (vm.HasOptions) vm.Selected = vm.Options.FirstOrDefault(o => o.Equals(d, StringComparison.OrdinalIgnoreCase));
+                else vm.Text = d;
+            }
+            TicketFields.Add(vm);
+        }
+        OnPropertyChanged(nameof(HasTicketFields));
+    }
+
+    /// <summary>Fragt Jira: Berechtigung, Typ, erkannte Felder, offene Pflichtfelder.</summary>
+    [RelayCommand]
+    private async Task CheckTicketAsync()
+    {
+        if (Project == null || _hub.Jira == null) { CheckText = "Jira ist nicht verbunden."; return; }
+        Checking = true; CheckText = "Prüfe in Jira…";
+        try
+        {
+            await EnsureJiraFieldsAsync();
+            var c = await _hub.Jira.CheckCreateAsync(Project.JiraProjectKey, TicketType);
+            var lines = new List<string>
+            {
+                c.CanCreate switch { true => $"✓ Du darfst in {Project.JiraProjectKey} Vorgänge erstellen", false => $"✗ Keine Berechtigung „Vorgänge erstellen“ in {Project.JiraProjectKey}", _ => "? Berechtigung nicht abfragbar" },
+                c.Type != null ? $"✓ Typ {c.Type.Label}" : "✗ Typ nicht gefunden",
+                $"{(c.Fields.EpicLink != null ? "✓" : "–")} Epic-Link-Feld: {c.Fields.EpicLink ?? "keins (Epic wird als parent gesetzt)"}",
+                $"{(c.Fields.Account != null ? "✓" : "–")} Account-Feld: {c.Fields.Account ?? "keins"}",
+                c.Required.Count == 0 ? "✓ Keine weiteren Pflichtfelder" : $"! Pflichtfelder: {string.Join(", ", c.Required.Select(f => f.Name))}",
+            };
+            lines.AddRange(c.Problems.Select(p => "✗ " + p));
+            CheckText = string.Join("\n", lines.Distinct());
+            if (c.Type != null) SetTicketFields(c.Required);
+        }
+        catch (Exception e) { CheckText = "Prüfung fehlgeschlagen: " + JiraClient.JiraErrorText(e.Message); }
+        finally { Checking = false; }
+    }
 
     [RelayCommand]
     private async Task DraftTicketAsync()
@@ -403,12 +507,17 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
                 if (string.IsNullOrWhiteSpace(TicketAccount)) { _toast.Show("Account fehlt", "Ohne Account wird kein Ticket angelegt – bitte einen Account wählen.", NoticeLevel.Warning); return; }
                 account = TicketAccount.Trim();
             }
-            var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, account);
-            if (!string.Equals(Project.IssueType, TicketType, StringComparison.Ordinal))
+            var extra = new Dictionary<string, System.Text.Json.Nodes.JsonNode?>();
+            foreach (var f in TicketFields)
             {
-                Project.IssueType = TicketType;   // pro Projekt merken
-                await _data.Projects.SaveAsync();
+                var node = JiraClient.FieldValue(f.Field, f.Value);
+                if (node == null && f.Field.Required) { _toast.Show("Pflichtfeld fehlt", $"Bitte „{f.Field.Name}“ ausfüllen – Jira verlangt es für diesen Typ.", NoticeLevel.Warning); return; }
+                if (node != null) extra[f.Field.Id] = node;
             }
+            var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, account, extra);
+            foreach (var f in TicketFields.Where(f => f.Value.Length > 0)) Project.FieldDefaults[f.Field.Id] = f.Value;   // pro Projekt merken
+            Project.IssueType = TicketType;   // pro Projekt merken
+            await _data.Projects.SaveAsync();
             if (account != null)
             {
                 // fürs neue Ticket und – wenn selbst gewählt – fürs Epic merken

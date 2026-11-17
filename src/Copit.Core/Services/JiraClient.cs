@@ -7,6 +7,11 @@ using Copit.Core.Models;
 
 namespace Copit.Core.Services;
 
+public record JiraFieldIds(string? EpicLink, string? Account, string? EpicName);
+public record JiraFieldOption(string Id, string Label);
+public record JiraCreateField(string Id, string Name, bool Required, bool HasDefault, string Type, string? ItemsType, string? Custom, List<JiraFieldOption> Options);
+public record JiraCreateCheck(bool? CanCreate, JiraIssueType? Type, List<JiraIssueType> Types, JiraFieldIds Fields, List<JiraCreateField> Required, List<string> Problems);
+
 public record JiraIssueType(string Id, string Name, bool Subtask)
 {
     public string Label => $"{Name} · {Id}";
@@ -349,7 +354,8 @@ public class JiraClient
     // ---------------- Tickets erstellen ----------------
 
     public async Task<string> CreateIssueAsync(string projectKey, string summary, string description, string issueType,
-        double estimateHours, string? epicKey, CancellationToken ct = default, string? account = null)
+        double estimateHours, string? epicKey, CancellationToken ct = default, string? account = null,
+        IReadOnlyDictionary<string, JsonNode?>? extraFields = null)
     {
         LastCreateNotes.Clear();
         if (!string.IsNullOrWhiteSpace(account) && !string.IsNullOrWhiteSpace(_s.AccountFieldId))
@@ -365,7 +371,7 @@ public class JiraClient
             {
                 try
                 {
-                    var key = await CreateIssueCoreAsync(projectKey, summary, description, issueType, estimateHours, epicKey, (_s.AccountFieldId, v), ct);
+                    var key = await CreateIssueCoreAsync(projectKey, summary, description, issueType, estimateHours, epicKey, (_s.AccountFieldId, v), extraFields, ct);
                     var check = await GetIssueAsync(key, ct);
                     if (check?.Account == null)
                         throw new InvalidOperationException($"{key} wurde angelegt, aber das Account-Feld ist leer. Bitte in Jira prüfen.");
@@ -375,11 +381,11 @@ public class JiraClient
             }
             throw new InvalidOperationException($"Ticket konnte nicht mit Account \"{account}\" angelegt werden: {lastErr?.Message}");
         }
-        return await CreateIssueCoreAsync(projectKey, summary, description, issueType, estimateHours, epicKey, null, ct);
+        return await CreateIssueCoreAsync(projectKey, summary, description, issueType, estimateHours, epicKey, null, extraFields, ct);
     }
 
     private async Task<string> CreateIssueCoreAsync(string projectKey, string summary, string description, string issueType,
-        double estimateHours, string? epicKey, (string Field, JsonNode? Value)? extra, CancellationToken ct)
+        double estimateHours, string? epicKey, (string Field, JsonNode? Value)? extra, IReadOnlyDictionary<string, JsonNode?>? extraFields, CancellationToken ct)
     {
         var fields = new JsonObject
         {
@@ -390,23 +396,35 @@ public class JiraClient
         };
         if (estimateHours > 0)
             fields["timetracking"] = new JsonObject { ["originalEstimate"] = FormatEstimate(estimateHours) };
+        // Epic: über das Epic-Link-Feld (Jira Server/DC), sonst als parent (Jira Cloud / neue Hierarchie)
+        var epicField = await EpicLinkFieldAsync(ct);
         if (!string.IsNullOrWhiteSpace(epicKey))
         {
-            if (!string.IsNullOrWhiteSpace(_s.EpicLinkFieldId)) fields[_s.EpicLinkFieldId] = epicKey;
+            if (epicField != null) fields[epicField] = epicKey;
             else fields["parent"] = new JsonObject { ["key"] = epicKey };
         }
         if (extra is { } x) fields[x.Field] = x.Value?.DeepClone();
+        foreach (var (k, v) in extraFields ?? new Dictionary<string, JsonNode?>()) fields[k] = v?.DeepClone();
 
         // Felder, die nicht auf der Anlege-Maske stehen, weglassen und erneut versuchen – danach nachtragen
         var optional = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "description", "timetracking", "parent" };
-        if (!string.IsNullOrWhiteSpace(_s.EpicLinkFieldId)) optional.Add(_s.EpicLinkFieldId);
+        if (epicField != null) optional.Add(epicField);
         var dropped = new Dictionary<string, JsonNode?>(StringComparer.OrdinalIgnoreCase);
         JsonNode? node = null;
         for (var attempt = 0; ; attempt++)
         {
             try { node = await PostAsync("rest/api/2/issue", new JsonObject { ["fields"] = fields.DeepClone() }, ct); break; }
-            catch (ApiException e) when (e.StatusCode == 400 && attempt < 4)
+            catch (ApiException e) when (e.StatusCode == 400 && attempt < 5)
             {
+                // parent ist in Jira DC nur für Untervorgänge erlaubt → Epic über das Epic-Link-Feld verknüpfen
+                if (fields.ContainsKey("parent") && !string.IsNullOrWhiteSpace(epicKey) && MentionsParent(e.Message))
+                {
+                    fields.Remove("parent");
+                    var ef = epicField ?? (await DetectFieldsSafeAsync(ct))?.EpicLink;
+                    if (ef != null) { fields[ef] = epicKey; epicField = ef; LastCreateNotes.Add($"Epic über das Epic-Link-Feld ({ef}) verknüpft"); }
+                    else LastCreateNotes.Add($"Epic {epicKey} konnte nicht verknüpft werden – bitte in Jira zuordnen");
+                    continue;
+                }
                 // Typ per Name abgelehnt (z. B. lokalisiert „Aufgabe“ statt „Task“) → passende ID aus Jira suchen
                 if (e.Message.Contains("issuetype", StringComparison.OrdinalIgnoreCase) && fields["issuetype"]?["name"] is { } typeName)
                 {
@@ -422,16 +440,134 @@ public class JiraClient
                 if (e.Message.Contains("issuetype", StringComparison.OrdinalIgnoreCase) && fields["issuetype"]?["id"] is { } typeId)
                 {
                     var types = await GetIssueTypesAsync(projectKey, ct);
-                    throw new InvalidOperationException($"Ticket-Typ mit ID {typeId} ist im Projekt {projectKey} nicht erlaubt. Verfügbar: {string.Join(", ", types.Select(t => $"{t.Name} ({t.Id})"))}");
+                    throw new InvalidOperationException($"Jira lehnt das Ticket ab: {JiraErrorText(e.Message)}\nTyp-ID {typeId}; verfügbar in {projectKey}: {string.Join(", ", types.Select(t => $"{t.Name} ({t.Id})"))}");
                 }
                 var bad = UnsettableFields(e.Message).Where(f => optional.Contains(f) && fields.ContainsKey(f)).ToList();
-                if (bad.Count == 0) throw;
+                if (bad.Count == 0) throw new ApiException("Jira lehnt das Ticket ab: " + JiraErrorText(e.Message), 400);
                 foreach (var f in bad) { dropped[f] = fields[f]?.DeepClone(); fields.Remove(f); }
             }
         }
         var key = node.Str("key");
         if (dropped.Count > 0) await RestoreDroppedFieldsAsync(key, dropped, description, estimateHours, epicKey, ct);
         return key;
+    }
+
+    private static bool MentionsParent(string message) =>
+        message.Contains("parent", StringComparison.OrdinalIgnoreCase) || message.Contains("sub-task", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("subtask", StringComparison.OrdinalIgnoreCase) || message.Contains("Untervorgang", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("Unteraufgabe", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Lesbarer Text aus einer Jira-Fehlerantwort: errorMessages und errors (Feld: Meldung).</summary>
+    public static string JiraErrorText(string message)
+    {
+        var start = message.IndexOf('{');
+        if (start < 0) return message;
+        try
+        {
+            var n = JsonNode.Parse(message[start..]);
+            var parts = new List<string>();
+            foreach (var m in n?["errorMessages"]?.AsArray() ?? []) if (m != null) parts.Add(m.ToString());
+            if (n?["errors"] is JsonObject o) foreach (var (k, v) in o) parts.Add($"{k}: {v}");
+            return parts.Count > 0 ? string.Join(" · ", parts) : message;
+        }
+        catch { return message; }
+    }
+
+    // ---------------- Felder erkennen, Pflichtfelder, Prüfung ----------------
+
+    private JiraFieldIds? _fieldIds;
+
+    /// <summary>Erkennt Epic-Link-, Epic-Name- und Tempo-Account-Feld anhand ihres Feldtyps.</summary>
+    public async Task<JiraFieldIds> DetectFieldsAsync(CancellationToken ct = default)
+    {
+        if (_fieldIds != null) return _fieldIds;
+        var arr = await GetAsync("rest/api/2/field", ct) as JsonArray ?? [];
+        string? F(string custom) => arr.FirstOrDefault(f => f?["schema"]?["custom"]?.ToString() == custom)?["id"]?.ToString();
+        return _fieldIds = new JiraFieldIds(F("com.pyxis.greenhopper.jira:gh-epic-link"), F("com.tempoplugin.tempo-accounts:accounts.customfield"), F("com.pyxis.greenhopper.jira:gh-epic-label"));
+    }
+
+    private async Task<JiraFieldIds?> DetectFieldsSafeAsync(CancellationToken ct)
+    {
+        try { return await DetectFieldsAsync(ct); } catch { return null; }
+    }
+
+    private async Task<string?> EpicLinkFieldAsync(CancellationToken ct) =>
+        !string.IsNullOrWhiteSpace(_s.EpicLinkFieldId) ? _s.EpicLinkFieldId : (await DetectFieldsSafeAsync(ct))?.EpicLink;
+
+    /// <summary>Felder der Anlege-Maske für Projekt + Typ (neue createmeta-API, sonst die alte).</summary>
+    public async Task<List<JiraCreateField>> GetCreateFieldsAsync(string projectKey, string issueTypeId, CancellationToken ct = default)
+    {
+        try
+        {
+            var n = await GetAsync($"rest/api/2/issue/createmeta/{Uri.EscapeDataString(projectKey)}/issuetypes/{Uri.EscapeDataString(issueTypeId)}?maxResults=500", ct);
+            var values = (n?["values"] ?? n) as JsonArray;
+            if (values is { Count: > 0 }) return [.. values.Where(v => v != null).Select(v => ParseCreateField(v!["fieldId"]?.ToString() ?? "", v!))];
+        }
+        catch (ApiException) { }
+        var old = await GetAsync($"rest/api/2/issue/createmeta?projectKeys={Uri.EscapeDataString(projectKey)}&issuetypeIds={Uri.EscapeDataString(issueTypeId)}&expand=projects.issuetypes.fields", ct);
+        var fields = old?["projects"]?[0]?["issuetypes"]?[0]?["fields"] as JsonObject;
+        return fields == null ? [] : [.. fields.Where(f => f.Value != null).Select(f => ParseCreateField(f.Key, f.Value!))];
+    }
+
+    public static JiraCreateField ParseCreateField(string id, JsonNode n)
+    {
+        var options = (n["allowedValues"] as JsonArray ?? [])
+            .Where(o => o != null)
+            .Select(o => new JiraFieldOption(o!["id"]?.ToString() ?? o["key"]?.ToString() ?? "", o["value"]?.ToString() ?? o["name"]?.ToString() ?? o["key"]?.ToString() ?? ""))
+            .Where(o => o.Id.Length > 0 && o.Label.Length > 0).ToList();
+        return new JiraCreateField(id, n["name"]?.ToString() ?? id, n["required"]?.GetValue<bool>() ?? false, n["hasDefaultValue"]?.GetValue<bool>() ?? false,
+            n["schema"]?["type"]?.ToString() ?? "string", n["schema"]?["items"]?.ToString(), n["schema"]?["custom"]?.ToString(), options);
+    }
+
+    private static readonly HashSet<string> HandledFields = new(StringComparer.OrdinalIgnoreCase)
+        { "project", "issuetype", "summary", "description", "reporter", "timetracking", "parent", "assignee", "priority" };
+
+    /// <summary>Pflichtfelder ohne Vorgabewert, die Copit nicht selbst füllt (Epic-Link/Account werden gesondert behandelt).</summary>
+    public static List<JiraCreateField> MissingRequired(IEnumerable<JiraCreateField> fields, JiraFieldIds? ids, string? accountField = null) =>
+        [.. fields.Where(f => f.Required && !f.HasDefault && !HandledFields.Contains(f.Id)
+                             && f.Id != ids?.EpicLink && f.Id != ids?.Account && f.Id != accountField)];
+
+    /// <summary>Wert für ein Feld der Anlege-Maske: Auswahlfelder per ID, Mehrfachauswahl als Liste, Zahl, sonst Text.</summary>
+    public static JsonNode? FieldValue(JiraCreateField f, string value)
+    {
+        value = value.Trim();
+        if (value.Length == 0) return null;
+        if (f.Options.Count > 0)
+        {
+            var o = f.Options.FirstOrDefault(x => x.Label.Equals(value, StringComparison.OrdinalIgnoreCase) || x.Id == value);
+            if (o == null) return null;
+            var node = new JsonObject { ["id"] = o.Id };
+            return f.Type == "array" ? new JsonArray(node) : node;
+        }
+        if (f.Type == "number" && double.TryParse(value.Replace(',', '.'), System.Globalization.NumberStyles.Any, CultureInfo.InvariantCulture, out var d)) return JsonValue.Create(d);
+        if (f.Type == "array") return new JsonArray(JsonValue.Create(value));
+        return JsonValue.Create(value);
+    }
+
+    /// <summary>Prüft vor dem Anlegen: Berechtigung, Typ, erkannte Felder und offene Pflichtfelder.</summary>
+    public async Task<JiraCreateCheck> CheckCreateAsync(string projectKey, string issueType, CancellationToken ct = default)
+    {
+        bool? canCreate = null;
+        try
+        {
+            var p = await GetAsync($"rest/api/2/mypermissions?projectKey={Uri.EscapeDataString(projectKey)}&permissions=CREATE_ISSUES", ct);
+            canCreate = p?["permissions"]?["CREATE_ISSUES"]?["havePermission"]?.GetValue<bool>();
+        }
+        catch (ApiException) { }
+        var types = await GetIssueTypesAsync(projectKey, ct);
+        var ids = await DetectFieldsSafeAsync(ct) ?? new JiraFieldIds(null, null, null);
+        var r = IssueTypeRef(string.IsNullOrWhiteSpace(issueType) ? _s.DefaultIssueType : issueType);
+        var type = types.FirstOrDefault(t => r["id"]?.ToString() == t.Id || string.Equals(r["name"]?.ToString(), t.Name, StringComparison.OrdinalIgnoreCase));
+        var required = new List<JiraCreateField>();
+        var problems = new List<string>();
+        if (canCreate == false) problems.Add($"Keine Berechtigung „Vorgänge erstellen“ im Projekt {projectKey} – bitte beim Jira-Admin anfragen.");
+        if (type == null) problems.Add($"Ticket-Typ „{issueType}“ gibt es in {projectKey} nicht. Verfügbar: {string.Join(", ", types.Select(t => t.Label))}");
+        else
+        {
+            try { required = MissingRequired(await GetCreateFieldsAsync(projectKey, type.Id, ct), ids, _s.AccountFieldId); }
+            catch (Exception e) { problems.Add("Pflichtfelder nicht ermittelbar: " + JiraErrorText(e.Message)); }
+        }
+        return new JiraCreateCheck(canCreate, type, types, ids, required, problems);
     }
 
     private static readonly HashSet<string> TaskAliases = new(StringComparer.OrdinalIgnoreCase) { "Task", "Aufgabe", "Tâche", "Tarea", "Attività" };

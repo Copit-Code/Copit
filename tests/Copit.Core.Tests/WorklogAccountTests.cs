@@ -77,13 +77,14 @@ public class CreateIssueRetryTests
         var calls = new List<string>();
         var server = Task.Run(async () =>
         {
-            for (var i = 0; i < 4; i++)
+            for (var i = 0; i < 5; i++)
             {
                 var ctx = await http.GetContextAsync();
                 var body = await new StreamReader(ctx.Request.InputStream).ReadToEndAsync();
-                calls.Add($"{ctx.Request.HttpMethod} {ctx.Request.Url!.AbsolutePath} {body}");
-                string reply; int code;
-                if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url.AbsolutePath.EndsWith("/issue") && body.Contains("\"description\""))
+                string reply = "[]"; int code = 200;
+                if (!ctx.Request.Url!.AbsolutePath.EndsWith("/field")) calls.Add($"{ctx.Request.HttpMethod} {ctx.Request.Url!.AbsolutePath} {body}");
+                if (ctx.Request.Url!.AbsolutePath.EndsWith("/field")) { }
+                else if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url.AbsolutePath.EndsWith("/issue") && body.Contains("\"description\""))
                 { code = 400; reply = """{"errorMessages":[],"errors":{"description":"Field 'description' cannot be set. It is not on the appropriate screen, or unknown."}}"""; }
                 else if (ctx.Request.HttpMethod == "POST" && ctx.Request.Url.AbsolutePath.EndsWith("/issue")) { code = 201; reply = """{"id":"1","key":"SHOP-9"}"""; }
                 else if (ctx.Request.HttpMethod == "PUT") { code = 400; reply = """{"errors":{"description":"Field 'description' cannot be set."}}"""; }
@@ -132,14 +133,15 @@ public class IssueTypeTests
         var calls = new List<string>();
         var server = Task.Run(async () =>
         {
-            for (var i = 0; i < 3; i++)
+            for (var i = 0; i < 4; i++)
             {
                 var ctx = await http.GetContextAsync();
                 var body = await new StreamReader(ctx.Request.InputStream).ReadToEndAsync();
                 var path = ctx.Request.Url!.AbsolutePath;
-                calls.Add($"{ctx.Request.HttpMethod} {path} {body}");
+                if (!path.EndsWith("/field")) calls.Add($"{ctx.Request.HttpMethod} {path} {body}");
                 (int code, string reply) = (ctx.Request.HttpMethod, path) switch
                 {
+                    ("GET", var f) when f.EndsWith("/field") => (200, "[]"),
                     ("POST", _) when body.Contains("\"name\":\"Task\"") => (400, """{"errorMessages":[],"errors":{"issuetype":"Geben Sie einen gültigen Vorgangstyp an"}}"""),
                     ("GET", var p) when p.Contains("/issuetypes") => (200, """{"values":[{"id":"10001","name":"Story","subtask":false},{"id":"10002","name":"Aufgabe","subtask":false},{"id":"10003","name":"Unteraufgabe","subtask":true}]}"""),
                     ("POST", _) => (201, """{"id":"7","key":"SHOP-7"}"""),
