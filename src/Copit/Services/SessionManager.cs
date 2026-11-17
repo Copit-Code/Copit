@@ -120,9 +120,9 @@ public class SessionManager : IAgentOps
 
     public void RaiseAgentsChanged() => MainThread.BeginInvokeOnMainThread(() => AgentsChanged?.Invoke());
 
-    public SessionHost Create(CopitProject project, AiProvider? provider = null)
+    public SessionHost Create(CopitProject project, AiProvider? provider = null, AgentMode? mode = null)
     {
-        var s = _store.Create(project, provider ?? project.Provider ?? _settings.Settings.Ai.DefaultProvider, AgentMode.Edit);
+        var s = _store.Create(project, provider ?? project.Provider ?? _settings.Settings.Ai.DefaultProvider, mode ?? AgentMode.Edit);
         RaiseAgentsChanged();
         return Host(s);
     }
@@ -684,8 +684,7 @@ public partial class SessionHost : ObservableObject
             parts.Add($"Du arbeitest im Projekt \"{p.Name}\" (Jira-Epic {p.EpicKey}{(string.IsNullOrEmpty(p.GitLabProject) ? "" : ", GitLab " + p.GitLabProject)}).");
             if (!string.IsNullOrWhiteSpace(p.Instructions)) parts.Add(p.Instructions);
         }
-        parts.Add(QuestionParser.Instructions);
-        if (Session.Mode == AgentMode.Auto) parts.Add(QuestionParser.AutoInstructions);
+        parts.Add(Session.Mode == AgentMode.Auto ? QuestionParser.AutoInstructions : QuestionParser.Instructions);
         if (_scriptDir != null)
             parts.Add(ScriptLibrary.Instructions(_scriptDir, ScriptLibrary.List(_scriptDir), Session.Mode is AgentMode.Edit or AgentMode.Auto));
         return string.Join("\n\n", parts);
@@ -767,6 +766,8 @@ public partial class SessionHost : ObservableObject
             allowed.AddRange(a);
             disallowed.AddRange(d);
         }
+        // Auto heißt: keine Rückfragen – auch nicht über Claudes eingebautes Frage-Tool.
+        if (Session.Mode == AgentMode.Auto && Provider == AiProvider.Claude) disallowed.Add("AskUserQuestion");
         Session.AllowedOnce.Clear();
         // Token sparen: Skript-Bibliothek (nur Ausführen/Schreiben in deren Ordner freigeben)
         _scriptDir = null;
