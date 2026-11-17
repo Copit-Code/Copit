@@ -297,6 +297,23 @@
                             </VerticalStackLayout>
                         </Grid>
                         <Label Text="{Binding TicketReason}" FontSize="12" TextColor="{StaticResource Text2}" IsVisible="{Binding TicketReason, Converter={StaticResource HasText}}" LineBreakMode="WordWrap" />
+                        <VerticalStackLayout Spacing="4" IsVisible="{Binding ShowTicketAccount}">
+                            <Label Text="ACCOUNT" Style="{StaticResource Caption}" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <Border Style="{StaticResource Pill}" BackgroundColor="{StaticResource Panel}" Stroke="{StaticResource Green}" StrokeThickness="1" HorizontalOptions="Start">
+                                    <Border.Triggers>
+                                        <DataTrigger TargetType="Border" Binding="{Binding TicketAccountMissing}" Value="True"><Setter Property="Stroke" Value="{StaticResource Amber}" /></DataTrigger>
+                                    </Border.Triggers>
+                                    <Border.GestureRecognizers><TapGestureRecognizer Command="{Binding PickTicketAccountCommand}" /></Border.GestureRecognizers>
+                                    <Label Text="{Binding TicketAccountText}" FontSize="11.5" FontFamily="Cascadia Mono" TextColor="{StaticResource Green}">
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding TicketAccountMissing}" Value="True"><Setter Property="TextColor" Value="{StaticResource Amber}" /></DataTrigger>
+                                        </Label.Triggers>
+                                    </Label>
+                                </Border>
+                                <Button Grid.Column="1" Text="Ändern" Style="{StaticResource Chip}" Command="{Binding PickTicketAccountCommand}" />
+                            </Grid>
+                        </VerticalStackLayout>
                         <VerticalStackLayout Spacing="4">
                             <Label Text="BESCHREIBUNG" Style="{StaticResource Caption}" />
                             <Editor Text="{Binding TicketDescription}" AutoSize="TextChanges" MinimumHeightRequest="160" FontSize="12.5" />

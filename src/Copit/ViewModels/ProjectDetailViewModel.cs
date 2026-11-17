@@ -24,6 +24,7 @@ public class NoteGroup : List<ProjectNote>
 public partial class ProjectDetailViewModel : ObservableObject, IActivatable
 {
     private readonly DataService _data;
+    private readonly TimeBookingService _time;
     private readonly ConnectionHub _hub;
     private readonly NavigationService _nav;
     private readonly SessionStore _store;
@@ -78,6 +79,13 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     [ObservableProperty] public partial bool Creating { get; set; }
     [ObservableProperty] public partial string DraftStatus { get; set; } = "";
     [ObservableProperty] public partial AiProvider TicketProvider { get; set; }
+    // Account des neuen Tickets (nur wenn ein Account-Feld konfiguriert ist)
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(TicketAccountText), nameof(TicketAccountMissing))] public partial string TicketAccount { get; set; } = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(TicketAccountText))] public partial string TicketAccountSource { get; set; } = "";
+    public bool ShowTicketAccount => !string.IsNullOrWhiteSpace(_settings.Settings.Jira.AccountFieldId);
+    public bool TicketAccountMissing => ShowTicketAccount && string.IsNullOrWhiteSpace(TicketAccount);
+    public string TicketAccountText => string.IsNullOrWhiteSpace(TicketAccount) ? "Kein Account gefunden – bitte wählen"
+        : $"{TicketAccount}{(TicketAccountSource.Length > 0 ? " · " + TicketAccountSource : "")}";
 
     public bool IsTickets => Tab == "tickets";
     public bool IsNotes => Tab == "notes";
@@ -88,8 +96,9 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     public bool HasPipeline => PipelineStatus != null;
 
     public ProjectDetailViewModel(DataService data, ConnectionHub hub, NavigationService nav, SessionStore store, SessionManager sessions,
-        AssistService assist, ToastService toast, GitService git, SettingsService settings)
+        AssistService assist, ToastService toast, GitService git, SettingsService settings, TimeBookingService time)
     {
+        _time = time;
         _data = data; _hub = hub; _nav = nav; _store = store; _sessions = sessions; _assist = assist; _toast = toast; _git = git; _settings = settings;
         Editor = new ProjectEditor(git, hub);
         Editor.Saved += async p =>
@@ -279,10 +288,54 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     {
         TicketIdea = TicketSummary = TicketDescription = TicketReason = TicketEstimate = DraftStatus = "";
         TicketType = _settings.Settings.Jira.DefaultIssueType;
+        TicketAccount = ""; TicketAccountSource = "";
+        OnPropertyChanged(nameof(ShowTicketAccount));
         ShowTicket = true;
+        if (ShowTicketAccount) _ = ResolveTicketAccountAsync();
     }
 
     [RelayCommand] private void CloseTicket() => ShowTicket = false;
+
+    /// <summary>Account vorschlagen: Account des Epics → gemerkt fürs Epic → gemerkt fürs Jira-Projekt.</summary>
+    private async Task ResolveTicketAccountAsync()
+    {
+        if (Project == null) return;
+        TicketAccountSource = "suche…";
+        try
+        {
+            string? acc; string src;
+            if (!string.IsNullOrWhiteSpace(Project.EpicKey)) (acc, src) = await _time.EpicAccountAsync(Project.EpicKey);
+            else
+            {
+                acc = _data.Accounts.Value.ProjectAccounts.GetValueOrDefault(Project.JiraProjectKey);
+                src = acc != null ? "gemerkt fürs Projekt" : "";
+            }
+            if (string.IsNullOrWhiteSpace(TicketAccount)) { TicketAccount = acc ?? ""; TicketAccountSource = acc != null ? src : ""; }
+            else if (TicketAccountSource == "suche…") TicketAccountSource = "";
+        }
+        catch { TicketAccountSource = ""; }
+    }
+
+    [RelayCommand]
+    private async Task PickTicketAccountAsync()
+    {
+        var options = new List<string>(_data.Accounts.Value.KnownAccounts.Take(12));
+        if (_settings.Settings.Jira.UseTempo && _hub.Jira != null)
+        {
+            try { foreach (var a in (await _hub.Jira.GetTempoAccountsAsync()).Take(80)) if (!options.Contains(a.Key)) options.Add(a.Key); }
+            catch { }
+        }
+        options.Add("Eingeben…");
+        var pick = await Dialogs.Choose("Account für das neue Ticket", [.. options]);
+        if (pick == null) return;
+        if (pick == "Eingeben…")
+        {
+            pick = await Dialogs.Prompt("Account für das neue Ticket", "Account-Key", TicketAccount, "z. B. ACC-1");
+            if (string.IsNullOrWhiteSpace(pick)) return;
+        }
+        TicketAccount = pick.Trim();
+        TicketAccountSource = "gewählt";
+    }
     [RelayCommand] private void SetTicketProvider(string p) => TicketProvider = Enum.Parse<AiProvider>(p);
     [RelayCommand] private void SetTicketType(string t) => TicketType = t;
 
@@ -314,8 +367,20 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         try
         {
             var est = double.TryParse(TicketEstimate.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var h) ? h : 0;
-            var epicAcc = string.IsNullOrWhiteSpace(Project.EpicKey) ? null : (await _hub.RequireJira.GetIssueAsync(Project.EpicKey))?.Account;
-            var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, epicAcc);
+            string? account = null;
+            if (ShowTicketAccount)
+            {
+                if (string.IsNullOrWhiteSpace(TicketAccount)) await PickTicketAccountAsync();
+                if (string.IsNullOrWhiteSpace(TicketAccount)) { _toast.Show("Account fehlt", "Ohne Account wird kein Ticket angelegt – bitte einen Account wählen.", NoticeLevel.Warning); return; }
+                account = TicketAccount.Trim();
+            }
+            var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, account);
+            if (account != null)
+            {
+                // fürs neue Ticket und – wenn selbst gewählt – fürs Epic merken
+                await _time.RememberAccountAsync(key, account, false);
+                if (TicketAccountSource == "gewählt" && !string.IsNullOrWhiteSpace(Project.EpicKey)) await _time.RememberAccountAsync(Project.EpicKey, account, false);
+            }
             ShowTicket = false;
             var notes = _hub.RequireJira.LastCreateNotes;
             if (notes.Count > 0) _toast.Show($"Ticket {key} angelegt", string.Join(" · ", notes), NoticeLevel.Warning);
