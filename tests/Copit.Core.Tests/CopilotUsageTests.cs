@@ -56,3 +56,19 @@ public class CopilotUsageTests
         Assert.Equal(2, text.Count);
     }
 }
+
+public class QuestionAnswerTests
+{
+    [Fact]
+    public void SingleAnswerIsSentAsIs()
+        => Assert.Equal("Ja", Copit.Core.Ai.QuestionParser.ComposeAnswers([("Soll ich committen?", " Ja ")]));
+
+    [Fact]
+    public void SeveralAnswersAreBundledAndOpenOnesLeftToTheAgent()
+    {
+        var msg = Copit.Core.Ai.QuestionParser.ComposeAnswers([("Branch?", "feature/x"), ("Tests?", null), ("Sprache?", "Deutsch")]);
+        Assert.Contains("1. Branch?\n   → feature/x", msg);
+        Assert.Contains("2. Tests?\n   → (keine Antwort – entscheide selbst", msg);
+        Assert.Contains("3. Sprache?\n   → Deutsch", msg);
+    }
+}

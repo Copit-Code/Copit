@@ -254,6 +254,42 @@ public class SessionManager : IAgentOps
     }
 }
 
+/// <summary>Eine Rückfrage des Agents mit gewählter bzw. eigener Antwort.</summary>
+public partial class QuestionVM : ObservableObject
+{
+    private readonly Action _changed;
+    public QuestionVM(AgentQuestion q, Action changed)
+    {
+        _changed = changed;
+        Text = q.Text;
+        Options = q.Options.Select(o => new QuestionOptionVM(o, this)).ToList();
+    }
+    public string Text { get; }
+    public IReadOnlyList<QuestionOptionVM> Options { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAnswered))]
+    private string _answer = "";
+
+    public bool IsAnswered => !string.IsNullOrWhiteSpace(Answer);
+
+    partial void OnAnswerChanged(string value)
+    {
+        foreach (var o in Options) o.IsSelected = o.Text == value;
+        _changed();
+    }
+
+    /// <summary>Option wählen; erneuter Klick hebt die Auswahl auf.</summary>
+    public void Choose(QuestionOptionVM o) => Answer = Answer == o.Text ? "" : o.Text;
+}
+
+public partial class QuestionOptionVM(string text, QuestionVM owner) : ObservableObject
+{
+    public string Text { get; } = text;
+    public QuestionVM Owner { get; } = owner;
+    [ObservableProperty] private bool _isSelected;
+}
+
 public partial class TodoItem : ObservableObject
 {
     public string Text { get; init; } = "";
@@ -361,7 +397,21 @@ public partial class SessionHost : ObservableObject
     public CopitProject? Project => _data.Project(Session.ProjectId);
     public ObservableCollection<MessageVM> Messages { get; } = [];
     public ObservableCollection<PermissionDenial> Denials { get; } = [];
-    public ObservableCollection<AgentQuestion> Questions { get; } = [];
+    public ObservableCollection<QuestionVM> Questions { get; } = [];
+    public int AnsweredCount => Questions.Count(q => q.IsAnswered);
+    public bool HasSeveralQuestions => Questions.Count > 1;
+    public string SendAnswersText => $"Antworten senden ({AnsweredCount}/{Questions.Count})";
+    internal void NotifyAnswers() { OnPropertyChanged(nameof(AnsweredCount)); OnPropertyChanged(nameof(HasSeveralQuestions)); OnPropertyChanged(nameof(SendAnswersText)); }
+    private void AddQuestion(AgentQuestion q) { Questions.Add(new QuestionVM(q, NotifyAnswers)); NotifyAnswers(); }
+
+    /// <summary>Alle Rückfragen gemeinsam beantworten – auch nur teilweise; offene entscheidet die KI.</summary>
+    public Task SendAnswersAsync()
+    {
+        if (Questions.Count == 0) return Task.CompletedTask;
+        var answers = Questions.Select(q => (q.Text, (string?)q.Answer)).ToList();
+        var msg = QuestionParser.ComposeAnswers(answers);
+        return SendAsync(msg);
+    }
     public ObservableCollection<TodoItem> Todos { get; } = [];
     public ObservableCollection<string> ChangedFiles { get; } = [];
 
@@ -505,11 +555,11 @@ public partial class SessionHost : ObservableObject
 
     private void RestoreQuestions()
     {
-        Questions.Clear();
+        Questions.Clear(); NotifyAnswers();
         var last = Messages.LastOrDefault(m => m.IsAssistant);
         if (last == null || Messages.Last() != last) return;
         var (_, qs) = QuestionParser.Extract(last.Text);
-        foreach (var q in qs) Questions.Add(q);
+        foreach (var q in qs) AddQuestion(q);
     }
 
     public void Save()
@@ -549,6 +599,7 @@ public partial class SessionHost : ObservableObject
             if (!string.IsNullOrWhiteSpace(p.Instructions)) parts.Add(p.Instructions);
         }
         parts.Add(QuestionParser.Instructions);
+        if (Session.Mode == AgentMode.Auto) parts.Add(QuestionParser.AutoInstructions);
         if (_scriptDir != null)
             parts.Add(ScriptLibrary.Instructions(_scriptDir, ScriptLibrary.List(_scriptDir), Session.Mode is AgentMode.Edit or AgentMode.Auto));
         return string.Join("\n\n", parts);
@@ -582,6 +633,7 @@ public partial class SessionHost : ObservableObject
             return;
         }
         Questions.Clear();
+        NotifyAnswers();
         Denials.Clear();
         Interrupted = false;
         if (Session.Messages.Count(m => m.Role == ChatRole.User) == 0 && Session.Title == "Neue Session")
@@ -840,7 +892,7 @@ public partial class SessionHost : ObservableObject
                 if (last != null)
                 {
                     var (clean, qs) = QuestionParser.Extract(last.Text);
-                    if (qs.Count > 0) { foreach (var q in qs) Questions.Add(q); }
+                    if (qs.Count > 0) { foreach (var q in qs) AddQuestion(q); }
                 }
                 if (r.DurationMs > 0)
                     AddSystem($"Fertig in {TimeSpan.FromMilliseconds(r.DurationMs):m\\:ss} · {r.Turns} Schritte{(r.CostUsd > 0 ? $" · ${r.CostUsd:0.000}" : "")}");

@@ -247,17 +247,20 @@ public partial class SessionViewModel : ObservableObject, IActivatable
         Host.SetContextWindow(size);
     }
 
+    /// <summary>Option einer Rückfrage: bei nur einer Frage sofort senden, bei mehreren nur auswählen.</summary>
     [RelayCommand]
-    private async Task AnswerAsync(string answer)
+    private async Task AnswerAsync(QuestionOptionVM option)
     {
         if (Host == null || Host.IsRunning) return;
-        await Host.SendAsync(answer);
+        option.Owner.Choose(option);
+        if (Host.Questions.Count == 1 && option.Owner.IsAnswered) await Host.SendAnswersAsync();
     }
 
     [RelayCommand]
-    private void AnswerFreeText(AgentQuestion q)
+    private async Task SendAnswersAsync()
     {
-        Input = $"Zu \"{q.Text}\": ";
+        if (Host == null || Host.IsRunning) return;
+        await Host.SendAnswersAsync();
     }
 
     [RelayCommand] private Task AllowAsync(PermissionDenial d) => Host?.AllowAsync(d, false) ?? Task.CompletedTask;

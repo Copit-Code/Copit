@@ -29,7 +29,7 @@ Ohne Jira- und GitLab-Verbindung erscheint ein Hinweis mit Link zu den Einstellu
 - **Neuer Agent:** Projekt, Titel, Ticket, Branch, Auftrag, Anbieter (Claude/Copilot), Modus (Fragen, Plan, Edit, Auto) und Modell. Optional gibt es einen eigenen git worktree pro Agent. Vorlagen aus Extensions füllen das Formular vor.
 - **Session:**
   - Verlauf mit Text, Tool-Aufrufen und Sub-Agents.
-  - Rückfragen des Agents erscheinen als Auswahl.
+  - Rückfragen des Agents erscheinen als Auswahl. Mehrere Fragen beantwortest du gesammelt und sendest sie mit **Antworten senden**. Offene Fragen entscheidet der Agent selbst.
   - Fehlende Berechtigungen lassen sich einmalig oder dauerhaft freigeben.
   - Pro Lauf werden erfasst: Agent-Zeit (Wanduhr), KI-Zeit, Tool-Zeit, Tokens, Kosten und geänderte Zeilen.
 - **Kontext:** Das Kontextfenster ist wählbar. Die Prompt-Bibliothek liefert wiederkehrende Aufträge.
