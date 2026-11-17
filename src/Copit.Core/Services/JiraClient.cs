@@ -337,13 +337,35 @@ public class JiraClient
         return null;
     }
 
+    /// <summary>Fehler betrifft das Account-Feld (dann nächste Schreibweise probieren, sonst echten Fehler weiterreichen).</summary>
+    private bool IsAccountError(string message) =>
+        message.Contains("account", StringComparison.OrdinalIgnoreCase) || (!string.IsNullOrEmpty(_s.AccountFieldId) && message.Contains(_s.AccountFieldId, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Tempo-Account zu Key, ID oder Namen (auch „Key · Name“), notfalls direkt per Key bei Tempo.</summary>
+    public async Task<TempoAccount?> ResolveTempoAccountAsync(string account, CancellationToken ct = default)
+    {
+        account = account.Trim();
+        var list = await GetTempoAccountsAsync(ct);
+        var hit = list.FirstOrDefault(a => a.Key.Equals(account, StringComparison.OrdinalIgnoreCase) || a.Id == account)
+                  ?? list.FirstOrDefault(a => a.Name.Trim().Equals(account, StringComparison.OrdinalIgnoreCase))
+                  ?? list.FirstOrDefault(a => account.Contains(a.Key, StringComparison.OrdinalIgnoreCase) && a.Key.Length > 4);
+        if (hit != null) return hit;
+        try
+        {
+            var n = await GetAsync($"rest/tempo-accounts/1/account/key/{Uri.EscapeDataString(account)}", ct);
+            if (n.Str("id") is { Length: > 0 } id) return new TempoAccount(n.Str("key"), n.Str("name"), id);
+        }
+        catch (ApiException) { }
+        return null;
+    }
+
     public async Task<List<TempoAccount>> GetTempoAccountsAsync(CancellationToken ct = default)
     {
         try
         {
             var node = await GetAsync("rest/tempo-accounts/1/account", ct);
             return (node?.AsArray() ?? [])
-                .Where(a => a.Str("status") is "" or "OPEN")
+                .Where(a => a.Str("status") is "" or "OPEN" or "Open" or "open")
                 .Select(a => new TempoAccount(a.Str("key"), a.Str("name"), a.Str("id")))
                 .Where(a => a.Key.Length > 0)
                 .OrderBy(a => a.Name).ToList();
@@ -360,12 +382,14 @@ public class JiraClient
         LastCreateNotes.Clear();
         if (!string.IsNullOrWhiteSpace(account) && !string.IsNullOrWhiteSpace(_s.AccountFieldId))
         {
-            // Tempo-Account-Feld: je nach Version als ID-Zahl, {id} oder Key – nacheinander probieren
-            var acc = (await GetTempoAccountsAsync(ct)).FirstOrDefault(a => string.Equals(a.Key, account, StringComparison.OrdinalIgnoreCase) || string.Equals(a.Id, account, StringComparison.OrdinalIgnoreCase));
+            // Tempo-Account-Feld erwartet die interne Account-ID („Account id is null“ bei Key/Name) →
+            // Account über Key, ID oder Namen auflösen und die ID in den üblichen Schreibweisen probieren
+            var acc = await ResolveTempoAccountAsync(account, ct)
+                      ?? throw new InvalidOperationException($"Account „{account}“ wurde in Tempo nicht gefunden – bitte im Ticket-Dialog einen Account aus der Liste wählen.");
             var variants = new List<JsonNode?>();
-            if (acc != null && long.TryParse(acc.Id, out var idNum)) { variants.Add(JsonValue.Create(idNum)); variants.Add(new JsonObject { ["id"] = acc.Id }); }
-            variants.Add(JsonValue.Create(account));
-            variants.Add(new JsonObject { ["key"] = account });
+            if (long.TryParse(acc.Id, out var idNum)) variants.Add(JsonValue.Create(idNum));
+            if (acc.Id.Length > 0) { variants.Add(new JsonObject { ["id"] = acc.Id }); variants.Add(JsonValue.Create(acc.Id)); }
+            variants.Add(new JsonObject { ["key"] = acc.Key });
             ApiException? lastErr = null;
             foreach (var v in variants)
             {
@@ -377,9 +401,9 @@ public class JiraClient
                         throw new InvalidOperationException($"{key} wurde angelegt, aber das Account-Feld ist leer. Bitte in Jira prüfen.");
                     return key;
                 }
-                catch (ApiException e) when (e.StatusCode == 400) { lastErr = e; }
+                catch (ApiException e) when (e.StatusCode == 400 && IsAccountError(e.Message)) { lastErr = e; }
             }
-            throw new InvalidOperationException($"Ticket konnte nicht mit Account \"{account}\" angelegt werden: {lastErr?.Message}");
+            throw new InvalidOperationException($"Ticket konnte nicht mit Account {acc.Key} (ID {acc.Id}) angelegt werden: {JiraErrorText(lastErr?.Message ?? "")}");
         }
         return await CreateIssueCoreAsync(projectKey, summary, description, issueType, estimateHours, epicKey, null, extraFields, ct);
     }
