@@ -73,6 +73,13 @@ public class JiraWorklog
     public long TimeSpentSeconds { get; set; }
     public string Comment { get; set; } = "";
     public double Hours => TimeSpentSeconds / 3600.0;
+    /// <summary>Account der Buchung (Tempo-Attribut bzw. Account-Feld des Tickets).</summary>
+    public string? Account { get; set; }
+    /// <summary>true = Account-Information liegt vor (auch wenn leer); false = unbekannt (z. B. Tempo nicht erreichbar).</summary>
+    public bool AccountChecked { get; set; }
+    /// <summary>ID des Worklogs in Tempo – zum Nachtragen des Accounts.</summary>
+    public string? TempoId { get; set; }
+    public bool HasAccount => !string.IsNullOrWhiteSpace(Account);
 }
 
 public class DayEntry

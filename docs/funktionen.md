@@ -75,6 +75,10 @@ Der Key wird exakt abgeglichen: `SHOP-1` trifft nicht `SHOP-12`.
   Gebucht wird der geschätzte Aufwand einer Person, nicht die reine KI-Zeit.
 - **Rückfragen mit Gedächtnis:** Antworten wie „Thema X gehört zu Ticket Y“ merkt sich Copit für die nächsten Tage.
 - **Tempo-Accounts:** Copit bucht nur mit gültigem Account. Accounts kommen aus dem Ticket, aus dem Gedächtnis oder aus der Projektzuordnung.
+- **Account-Status im Kalender:**
+  - Der Tagesbalken ist aufgeteilt: grün mit Account, orange ohne, grau unbekannt. Darüber stehen die Stunden.
+  - Das gilt auch für Buchungen von außerhalb Copit, die Accounts liest Copit über Tempo.
+  - In der Tagesansicht lässt sich ein fehlender Account an der bestehenden Buchung nachtragen.
 - **Tasks im Epic:** Fehlt ein passendes Ticket, legt Copit es im Epic an, mit Account.
 - **Ohne Jira:** Gebucht wird intern, auch ohne Ticket.
 

@@ -33,6 +33,12 @@ public class BookingPlan
     public List<TimeQuestion> Questions { get; set; } = [];
 }
 
+/// <summary>Stunden eines Tages: mit Account, ohne Account, Account unbekannt (Tempo nicht erreichbar).</summary>
+public record DayHours(double WithAccount, double WithoutAccount, double Unknown)
+{
+    public double Total => WithAccount + WithoutAccount + Unknown;
+}
+
 public partial class TimeBookingService(ConnectionHub hub, DataService data, SettingsService settings, GitService git, AiService ai)
 {
     private TimeSettings T => settings.Settings.Time;
@@ -55,6 +61,34 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
     {
         data.LocalWorklogs.Value.Worklogs.RemoveAll(x => x.Id == w.Id);
         await data.LocalWorklogs.SaveAsync();
+    }
+
+    /// <summary>Gebuchte Stunden eines Tages aufgeteilt nach Account (für den Kalenderbalken).</summary>
+    public static DayHours Split(IEnumerable<JiraWorklog> logs)
+    {
+        double with = 0, without = 0, unknown = 0;
+        foreach (var l in logs)
+        {
+            if (!l.AccountChecked) unknown += l.Hours;
+            else if (l.HasAccount) with += l.Hours;
+            else without += l.Hours;
+        }
+        return new DayHours(with, without, unknown);
+    }
+
+    /// <summary>Gebuchte Stunden pro Tag, aufgeteilt nach mit / ohne / unbekanntem Account.</summary>
+    public async Task<Dictionary<DateOnly, DayHours>> GetBookedSplitAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        var logs = await GetWorklogsAsync(from, to, ct);
+        return logs.GroupBy(l => DateOnly.FromDateTime(l.Started)).ToDictionary(g => g.Key, g => Split(g));
+    }
+
+    /// <summary>Account an einer bestehenden Buchung nachtragen (Tempo) und für das Ticket merken.</summary>
+    public async Task SetWorklogAccountAsync(JiraWorklog w, string account, bool rememberForProject, CancellationToken ct = default)
+    {
+        var jira = hub.Jira ?? throw new InvalidOperationException("Jira ist nicht verbunden.");
+        await jira.SetWorklogAccountAsync(w, account, ct);
+        await RememberAccountAsync(w.IssueKey, account.Trim(), rememberForProject);
     }
 
     /// <summary>Gebuchte Stunden pro Tag im Zeitraum (Jira oder intern).</summary>

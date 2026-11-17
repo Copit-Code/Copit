@@ -46,6 +46,13 @@ public class JiraClient
         return await HttpFactory.ReadJsonAsync(resp, ct);
     }
 
+    private async Task<JsonNode?> SendJsonAsync(HttpMethod method, string url, object body, CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(method, url) { Content = JsonContent.Create(body) };
+        using var resp = await _http.SendAsync(req, ct);
+        return await HttpFactory.ReadJsonAsync(resp, ct);
+    }
+
     public async Task<(string Name, string Key, string DisplayName)> GetMyselfAsync(CancellationToken ct = default)
     {
         _myself ??= await GetAsync("rest/api/2/myself", ct);
@@ -174,6 +181,7 @@ public class JiraClient
                     if (!DateTimeOffset.TryParse(w.Str("started"), CultureInfo.InvariantCulture, DateTimeStyles.None, out var started)) continue;
                     var d = DateOnly.FromDateTime(started.LocalDateTime);
                     if (d < from || d > to) continue;
+                    var accountField = !string.IsNullOrWhiteSpace(_s.AccountFieldId);
                     lock (result)
                         result.Add(new JiraWorklog
                         {
@@ -182,14 +190,76 @@ public class JiraClient
                             IssueSummary = issue.Summary,
                             Started = started.LocalDateTime,
                             TimeSpentSeconds = w.Long("timeSpentSeconds"),
-                            Comment = w.Str("comment")
+                            Comment = w.Str("comment"),
+                            // ohne Tempo hängt der Account am Ticket (Account-Feld)
+                            Account = accountField ? issue.Account : null,
+                            AccountChecked = accountField && !_s.UseTempo,
                         });
                 }
             }
             finally { gate.Release(); }
         });
         await Task.WhenAll(tasks);
+        if (_s.UseTempo && result.Count > 0)
+        {
+            try { ApplyTempoAccounts(result, await GetTempoWorklogsAsync(from, to, me, ct), _s.TempoAccountAttributeKey); }
+            catch { /* Tempo nicht erreichbar → Accounts bleiben „unbekannt“ */ }
+        }
         return result.OrderBy(w => w.Started).ToList();
+    }
+
+    /// <summary>Eigene Worklogs aus Tempo (enthalten die Attribute, also den Account).</summary>
+    private async Task<JsonArray> GetTempoWorklogsAsync(DateOnly from, DateOnly to, (string Name, string Key, string DisplayName) me, CancellationToken ct)
+    {
+        var worker = string.IsNullOrEmpty(me.Key) ? me.Name : me.Key;
+        var res = await PostAsync("rest/tempo-timesheets/4/worklogs/search", new { from = from.ToString("yyyy-MM-dd"), to = to.ToString("yyyy-MM-dd"), worker = new[] { worker } }, ct);
+        return res as JsonArray ?? [];
+    }
+
+    /// <summary>Ordnet Tempo-Worklogs (per Jira-Worklog-ID, sonst Ticket + Start + Dauer) den Jira-Worklogs zu und übernimmt den Account.</summary>
+    public static void ApplyTempoAccounts(List<JiraWorklog> logs, JsonArray tempo, string attributeKey)
+    {
+        foreach (var t in tempo)
+        {
+            if (t == null) continue;
+            var jiraId = t["jiraWorklogId"]?.ToString() ?? t["originId"]?.ToString();
+            var key = t["issue"]?["key"]?.ToString() ?? t["originTaskId"]?.ToString();
+            var secs = t["timeSpentSeconds"]?.GetValue<long>() ?? 0;
+            DateTime.TryParse(t["started"]?.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var started);
+            var w = logs.FirstOrDefault(l => jiraId != null && l.Id == jiraId)
+                    ?? logs.FirstOrDefault(l => !l.AccountChecked && string.Equals(l.IssueKey, key, StringComparison.OrdinalIgnoreCase)
+                                                && l.TimeSpentSeconds == secs && Math.Abs((l.Started - started).TotalMinutes) < 1);
+            if (w == null) continue;
+            var attr = t["attributes"]?[attributeKey];
+            w.Account = attr == null ? null : ReadAccount(attr["value"] ?? attr);
+            w.AccountChecked = true;
+            w.TempoId = t["tempoWorklogId"]?.ToString() ?? t["id"]?.ToString();
+        }
+    }
+
+    /// <summary>Trägt den Account an einem bestehenden Tempo-Worklog nach und prüft, ob Tempo ihn übernommen hat.</summary>
+    public async Task<string> SetWorklogAccountAsync(JiraWorklog w, string account, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(w.TempoId)) throw new InvalidOperationException("Diese Buchung ist in Tempo nicht bekannt – Account bitte direkt in Tempo nachtragen.");
+        var me = await GetMyselfAsync(ct);
+        var body = new
+        {
+            worker = string.IsNullOrEmpty(me.Key) ? me.Name : me.Key,
+            originTaskId = w.IssueKey,
+            started = w.Started.ToString("yyyy-MM-dd'T'HH:mm:ss.000"),
+            timeSpentSeconds = w.TimeSpentSeconds,
+            billableSeconds = w.TimeSpentSeconds,
+            comment = w.Comment,
+            attributes = new Dictionary<string, object> { [_s.TempoAccountAttributeKey] = new { value = account.Trim() } },
+        };
+        var res = await SendJsonAsync(HttpMethod.Put, $"rest/tempo-timesheets/4/worklogs/{Uri.EscapeDataString(w.TempoId)}", body, ct);
+        var booked = (res as JsonArray)?.FirstOrDefault() ?? res;
+        var attr = booked?["attributes"]?[_s.TempoAccountAttributeKey];
+        var actual = attr == null ? (booked?["attributes"] == null ? account.Trim() : null) : ReadAccount(attr["value"] ?? attr);
+        if (!string.Equals(actual, account.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Tempo hat den Account \"{account}\" nicht übernommen (jetzt: \"{actual ?? "keiner"}\").");
+        w.Account = actual; w.AccountChecked = true;
+        return actual!;
     }
 
     /// <summary>Alle Worklogs eines Tickets (alle Personen) – für die Doku „Arbeit &amp; Verlauf“.</summary>
