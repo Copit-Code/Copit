@@ -52,8 +52,8 @@
                             </Grid>
                             <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                                 <VerticalStackLayout>
-                                    <Label Text="STANDARD-TICKETTYP" Style="{StaticResource Field}" />
-                                    <Entry Text="{Binding IssueType}" Placeholder="Task" />
+                                    <Label Text="STANDARD-TICKETTYP (NAME ODER ID)" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding IssueType}" Placeholder="Task, Aufgabe oder 10002" />
                                 </VerticalStackLayout>
                                 <VerticalStackLayout Grid.Column="1">
                                     <Label Text="TEMPO ACCOUNT-ATTRIBUT" Style="{StaticResource Field}" />

@@ -534,7 +534,9 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
     {
         var jira = hub.RequireJira;
         epicKey = epicKey.Trim().ToUpperInvariant();
-        var key = await jira.CreateIssueAsync(ProjectKey(epicKey), summary.Trim(), description, "Task", estimateHours, epicKey, ct, account);
+        var type = data.Projects.Value.Projects.FirstOrDefault(p => string.Equals(p.EpicKey, epicKey, StringComparison.OrdinalIgnoreCase))?.IssueType;
+        if (string.IsNullOrWhiteSpace(type)) type = string.IsNullOrWhiteSpace(settings.Settings.Jira.DefaultIssueType) ? "Task" : settings.Settings.Jira.DefaultIssueType;
+        var key = await jira.CreateIssueAsync(ProjectKey(epicKey), summary.Trim(), description, type, estimateHours, epicKey, ct, account);
         if (!string.IsNullOrWhiteSpace(account)) await RememberAccountAsync(key, account, false);
         return await jira.GetIssueAsync(key, ct) ?? new JiraIssue { Key = key, Summary = summary, Account = account };
     }

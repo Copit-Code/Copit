@@ -14,6 +14,8 @@ public class CopitProject
     public DateTime LastOpened { get; set; } = DateTime.Now;
     /// <summary>Projektspezifische Anweisungen für die KI.</summary>
     public string Instructions { get; set; } = "";
+    /// <summary>Ticket-Typ für neue Tickets in diesem Projekt (Name oder ID, leer = Standard aus den Einstellungen).</summary>
+    public string IssueType { get; set; } = "";
     /// <summary>Ordner in der Projektliste ("" = ohne Ordner), Unterordner mit '/', z. B. "Kunde A/Backend".</summary>
     public string Group { get; set; } = "";
 
@@ -39,6 +41,10 @@ public class JiraIssue
     public string Status { get; set; } = "";
     public string StatusCategory { get; set; } = "";
     public string IssueType { get; set; } = "";
+    /// <summary>ID des Ticket-Typs in Jira (z. B. "10002").</summary>
+    public string IssueTypeId { get; set; } = "";
+    /// <summary>Anzeige „Typ · ID“ für Karten.</summary>
+    public string IssueTypeText => IssueTypeId.Length > 0 ? $"{IssueType} · {IssueTypeId}" : IssueType;
     public string Assignee { get; set; } = "";
     public string Priority { get; set; } = "";
     public long OriginalEstimateSeconds { get; set; }

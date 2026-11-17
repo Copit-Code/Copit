@@ -47,7 +47,9 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     public ObservableCollection<NoteGroup> NoteGroups { get; } = [];
     public ObservableCollection<SessionHost> SessionList { get; } = [];
     public ProjectEditor Editor { get; }
-    public string[] IssueTypes { get; } = ["Task", "Story", "Bug", "Sub-task"];
+    /// <summary>Ticket-Typen des Projekts aus Jira („Name · ID“); Fallback ohne Jira.</summary>
+    public ObservableCollection<string> IssueTypes { get; } = ["Task", "Story", "Bug"];
+    [ObservableProperty] public partial string IssueTypesInfo { get; set; } = "";
 
     [ObservableProperty] public partial CopitProject? Project { get; set; }
     [ObservableProperty] public partial JiraIssue? Epic { get; set; }
@@ -105,7 +107,7 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         {
             var e = _data.Project(p.Id);
             if (e == null) return;
-            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions; ProjectFolders.Move(data.Projects.Value, e, p.Group);
+            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions; e.IssueType = p.IssueType; ProjectFolders.Move(data.Projects.Value, e, p.Group);
             await _data.Projects.SaveAsync();
             _data.RaiseProjectsChanged();
             Project = null; Project = e;
@@ -287,7 +289,8 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     private void NewTicket()
     {
         TicketIdea = TicketSummary = TicketDescription = TicketReason = TicketEstimate = DraftStatus = "";
-        TicketType = _settings.Settings.Jira.DefaultIssueType;
+        TicketType = !string.IsNullOrWhiteSpace(Project?.IssueType) ? Project!.IssueType : _settings.Settings.Jira.DefaultIssueType;
+        _ = LoadIssueTypesAsync();
         TicketAccount = ""; TicketAccountSource = "";
         OnPropertyChanged(nameof(ShowTicketAccount));
         ShowTicket = true;
@@ -295,6 +298,26 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     }
 
     [RelayCommand] private void CloseTicket() => ShowTicket = false;
+
+    /// <summary>Lädt die im Projekt erlaubten Ticket-Typen mit ID und wählt den passenden Standard.</summary>
+    private async Task LoadIssueTypesAsync()
+    {
+        if (Project == null || _hub.Jira == null || string.IsNullOrWhiteSpace(Project.JiraProjectKey)) return;
+        IssueTypesInfo = "Lade Ticket-Typen…";
+        try
+        {
+            var types = (await _hub.Jira.GetIssueTypesAsync(Project.JiraProjectKey)).Where(t => !t.Subtask).ToList();
+            if (types.Count == 0) { IssueTypesInfo = ""; return; }
+            IssueTypes.Clear();
+            foreach (var t in types) IssueTypes.Add(t.Label);
+            // gewählten Typ (Name oder ID) auf „Name · ID“ abbilden
+            var cur = JiraClient.IssueTypeRef(TicketType);
+            var match = types.FirstOrDefault(t => cur["id"]?.ToString() == t.Id || string.Equals(cur["name"]?.ToString(), t.Name, StringComparison.OrdinalIgnoreCase));
+            TicketType = match?.Label ?? types[0].Label;
+            IssueTypesInfo = match == null && cur["name"] != null ? $"„{cur["name"]}“ gibt es hier nicht – {types[0].Name} gewählt" : "";
+        }
+        catch (Exception e) { IssueTypesInfo = "Ticket-Typen nicht ladbar: " + e.Message; }
+    }
 
     /// <summary>Account vorschlagen: Account des Epics → gemerkt fürs Epic → gemerkt fürs Jira-Projekt.</summary>
     private async Task ResolveTicketAccountAsync()
@@ -351,7 +374,13 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
                 s => MainThread.BeginInvokeOnMainThread(() => DraftStatus = s));
             TicketSummary = d.Summary;
             TicketDescription = d.Description + (d.Subtasks.Count > 0 ? "\n\nh3. Teilschritte\n" + string.Join("\n", d.Subtasks.Select(s => "* " + s)) : "");
-            TicketType = string.IsNullOrWhiteSpace(d.IssueType) || d.IssueType.Contains('|') ? TicketType : d.IssueType;
+            if (!string.IsNullOrWhiteSpace(d.IssueType) && !d.IssueType.Contains('|'))
+            {
+                // KI-Vorschlag (Name) auf einen echten Typ aus Jira abbilden, sonst Auswahl behalten
+                var hit = IssueTypes.FirstOrDefault(l => l.Split(" · ")[0].Equals(d.IssueType.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (hit != null) TicketType = hit;
+                else if (!IssueTypes.Any(l => l.Contains(" · "))) TicketType = d.IssueType;
+            }
             TicketEstimate = d.EstimateHours.ToString("0.##", De);
             TicketReason = d.EstimateReason;
         }
@@ -375,6 +404,11 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
                 account = TicketAccount.Trim();
             }
             var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, account);
+            if (!string.Equals(Project.IssueType, TicketType, StringComparison.Ordinal))
+            {
+                Project.IssueType = TicketType;   // pro Projekt merken
+                await _data.Projects.SaveAsync();
+            }
             if (account != null)
             {
                 // fürs neue Ticket und – wenn selbst gewählt – fürs Epic merken

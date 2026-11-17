@@ -20,7 +20,7 @@
                 <VerticalStackLayout Spacing="6">
                     <Grid ColumnDefinitions="*,Auto">
                         <Label Text="{Binding Key}" FontAttributes="Bold" FontSize="12" TextColor="{StaticResource Cyan}" />
-                        <Label Grid.Column="1" Text="{Binding IssueType}" FontSize="10.5" TextColor="{StaticResource Muted}" />
+                        <Label Grid.Column="1" Text="{Binding IssueTypeText}" FontSize="10.5" TextColor="{StaticResource Muted}" ToolTipProperties.Text="Ticket-Typ · ID in Jira" />
                     </Grid>
                     <Label Text="{Binding Summary}" FontSize="12.5" LineBreakMode="WordWrap" MaxLines="3" />
                     <Grid ColumnDefinitions="*,Auto">
@@ -281,15 +281,16 @@
                         <Grid ColumnDefinitions="*,160" ColumnSpacing="14">
                             <VerticalStackLayout Spacing="4">
                                 <Label Text="TYP" Style="{StaticResource Caption}" />
-                                <HorizontalStackLayout BindableLayout.ItemsSource="{Binding IssueTypes}" Spacing="6">
+                                <FlexLayout BindableLayout.ItemsSource="{Binding IssueTypes}" Wrap="Wrap">
                                     <BindableLayout.ItemTemplate>
                                         <DataTemplate>
-                                            <Button Text="{Binding .}" Style="{StaticResource Chip}"
+                                            <Button Text="{Binding .}" Style="{StaticResource Chip}" Margin="0,0,6,6"
                                                     Command="{Binding Source={x:Reference Root}, Path=BindingContext.SetTicketTypeCommand}" CommandParameter="{Binding .}" />
                                         </DataTemplate>
                                     </BindableLayout.ItemTemplate>
-                                </HorizontalStackLayout>
+                                </FlexLayout>
                                 <Label Text="{Binding TicketType, StringFormat='Gewählt: {0}'}" FontSize="11" TextColor="{StaticResource Cyan}" />
+                                <Label Text="{Binding IssueTypesInfo}" FontSize="11" TextColor="{StaticResource Amber}" IsVisible="{Binding IssueTypesInfo, Converter={StaticResource HasText}}" LineBreakMode="WordWrap" />
                             </VerticalStackLayout>
                             <VerticalStackLayout Grid.Column="1" Spacing="4">
                                 <Label Text="SCHÄTZUNG (H)" Style="{StaticResource Caption}" />
