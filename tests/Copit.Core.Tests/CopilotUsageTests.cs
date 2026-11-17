@@ -43,6 +43,14 @@ public class CopilotUsageTests
     }
 
     [Fact]
+    public void InputIsKeptWhenCacheIsReportedSeparately()
+    {
+        // Eingabe ohne Cache, Cache deutlich größer → Eingabe darf nicht auf 0 fallen
+        var (p, _) = Run("Tokens     ↑ 3.1k (45.2k cached) • ↓ 812");
+        Assert.Equal(new TokenUsage(3_100, 812, 45_200, 0), p.Usage);
+    }
+
+    [Fact]
     public void ToleratesBrokenArrowEncoding()
     {
         var (p, _) = Run("Tokens     â†‘ 2.5k (1k cached) â€¢ â†“ 40");

@@ -74,6 +74,7 @@ public static class MauiProgram
         s.AddSingleton<DataService>();
         s.AddSingleton<ConnectionHub>();
         s.AddSingleton<GitService>();
+        s.AddSingleton<DeliveryService>();
         s.AddSingleton<ClaudeCliRunner>();
         s.AddSingleton<CopilotCliRunner>();
         s.AddSingleton<AgentRunnerFactory>();

@@ -177,6 +177,8 @@
                                     <Entry Text="{Binding CopilotArgs}" Placeholder="z.B. --log-level none" FontFamily="{StaticResource Mono}" />
                                     <Label Text="PREIS PRO PREMIUM REQUEST (USD)" Style="{StaticResource Field}" />
                                     <Entry Text="{Binding CopilotRequestPrice}" Placeholder="0.04" FontFamily="{StaticResource Mono}" Keyboard="Numeric" />
+                                    <Label Text="PREIS PRO AI CREDIT (USD, NUR BEI CREDIT-ABRECHNUNG)" Style="{StaticResource Field}" />
+                                    <Entry Text="{Binding CopilotCreditPrice}" Placeholder="0 = nicht berechnen" FontFamily="{StaticResource Mono}" Keyboard="Numeric" />
                                     <Label Text="Copilot meldet keine Dollar-Beträge. Copit rechnet Premium Requests × Preis, damit Kosten in Activity und Budgets erscheinen. 0 = keine Kosten." Style="{StaticResource Sub}" FontSize="11.5" />
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0">
                                         <Button Text="Testen" Command="{Binding TestCopilotCommand}" />

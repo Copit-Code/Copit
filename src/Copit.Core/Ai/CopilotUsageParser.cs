@@ -41,8 +41,9 @@ public sealed partial class CopilotUsageParser
             var input = Num(t.Groups["in"].Value);
             var cached = Part(t.Groups["inx"].Value, "cached");
             var written = Part(t.Groups["inx"].Value, "written");
-            // „↑“ ist die gesamte Eingabe inkl. Cache – frische Eingabe = Rest
-            _in += Math.Max(0, input - cached - written);
+            // „↑“ ist meist die gesamte Eingabe inkl. Cache → frische Eingabe = Rest.
+            // Ist der Cache größer als „↑“, zählt „↑“ den Cache nicht mit → unverändert übernehmen.
+            _in += input >= cached + written ? input - cached - written : input;
             _cacheRead += cached;
             _cacheWrite += written;
             _out += Num(t.Groups["out"].Value);

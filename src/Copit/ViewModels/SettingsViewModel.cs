@@ -54,6 +54,7 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
     [ObservableProperty] public partial string CopilotModel { get; set; } = "";
     [ObservableProperty] public partial string CopilotArgs { get; set; } = "";
     [ObservableProperty] public partial string CopilotRequestPrice { get; set; } = "0.04";
+    [ObservableProperty] public partial string CopilotCreditPrice { get; set; } = "0";
     [ObservableProperty] public partial string CopilotTest { get; set; } = "";
     [ObservableProperty] public partial string Instructions { get; set; } = "";
     // Token sparen: Skript-Bibliothek
@@ -86,6 +87,7 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
         DefaultClaude = st.Ai.DefaultProvider == AiProvider.Claude;
         ClaudePath = st.Ai.ClaudePath; ClaudeModel = st.Ai.ClaudeModel; ClaudeArgs = st.Ai.ClaudeExtraArgs;
         CopilotPath = st.Ai.CopilotPath; CopilotModel = st.Ai.CopilotModel; CopilotArgs = st.Ai.CopilotExtraArgs; CopilotRequestPrice = st.Ai.CopilotPremiumRequestUsd.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        CopilotCreditPrice = st.Ai.CopilotAiCreditUsd.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
         Instructions = st.Ai.GlobalInstructions;
         ScriptsEnabled = st.Ai.Scripts.Enabled; ScriptsPerProject = st.Ai.Scripts.Scope == "project";
         LoadScripts();
@@ -116,6 +118,8 @@ public partial class SettingsViewModel : ObservableObject, IActivatable
         st.Ai.CopilotPath = CopilotPath.Trim(); st.Ai.CopilotModel = CopilotModel.Trim(); st.Ai.CopilotExtraArgs = CopilotArgs.Trim();
         if (double.TryParse(CopilotRequestPrice.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var reqPrice) && reqPrice >= 0)
             st.Ai.CopilotPremiumRequestUsd = reqPrice;
+        if (double.TryParse(CopilotCreditPrice.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var creditPrice) && creditPrice >= 0)
+            st.Ai.CopilotAiCreditUsd = creditPrice;
         st.Ai.GlobalInstructions = Instructions;
         st.Ai.Scripts.Enabled = ScriptsEnabled; st.Ai.Scripts.Scope = ScriptsPerProject ? "project" : "global";
         if (double.TryParse(MinHours.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var h)) st.Time.MinHoursPerDay = h;

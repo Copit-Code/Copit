@@ -16,7 +16,7 @@ public record TokenUsage(long Input, long Output, long CacheRead, long CacheWrit
     public long Total => Input + Output + CacheRead + CacheWrite;
 }
 public record AgentResult(bool IsError, string Text, double CostUsd, long DurationMs, int Turns,
-    IReadOnlyList<PermissionDenial> Denials, string? SessionId, string Subtype, TokenUsage? Usage = null, double PremiumRequests = 0) : AgentEvent;
+    IReadOnlyList<PermissionDenial> Denials, string? SessionId, string Subtype, TokenUsage? Usage = null, double PremiumRequests = 0, double AiCredits = 0, bool UsageReported = true) : AgentEvent;
 
 public class AgentRequest
 {

@@ -200,12 +200,13 @@ public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings
                                lock (full) text = full.ToString().Trim();
                                var isError = !res.Ok;
                                if (isError && text.Length == 0) text = err.ToString().Trim();
-                               TokenUsage? tokens; double premium;
-                               lock (usage) { tokens = usage.Usage; premium = usage.PremiumRequests; }
-                               // Kosten = Premium Requests × Preis (Copilot meldet keine Dollar-Beträge)
-                               var cost = premium * Math.Max(0, Settings.Settings.Ai.CopilotPremiumRequestUsd);
+                               TokenUsage? tokens; double premium, credits; bool found;
+                               lock (usage) { tokens = usage.Usage; premium = usage.PremiumRequests; credits = usage.AiCredits; found = usage.Found; }
+                               // Kosten = Premium Requests × Preis bzw. AI Credits × Preis (Copilot meldet keine Dollar-Beträge)
+                               var ai = Settings.Settings.Ai;
+                               var cost = premium * Math.Max(0, ai.CopilotPremiumRequestUsd) + credits * Math.Max(0, ai.CopilotAiCreditUsd);
                                return new AgentResult(isError, text, cost, (long)(DateTime.Now - started).TotalMilliseconds, 1, [], null,
-                                   isError ? "error" : "success", tokens, premium);
+                                   isError ? "error" : "success", tokens, premium, credits, found);
                            }, ct))
             yield return e;
     }

@@ -50,6 +50,13 @@ Seite **Änderungen**, auch erreichbar über das Ticket-Menü im Projekt oder di
 
 Der Key wird exakt abgeglichen: `SHOP-1` trifft nicht `SHOP-12`.
 
+## Lieferstatus pro Ticket
+
+Copit zeigt zu jedem Agent, wie weit das Ticket geliefert ist: **Commit → Push → Merge Request → Pipeline → Jira**.
+- **Board-Karte:** Symbole je Schritt und ein Satz als Urteil, z. B. „Gepusht · Pipeline grün“ oder „Pipeline fehlgeschlagen“.
+- **Session:** Panel mit allen Schritten, Links nach GitLab und Jira, Pipeline-Jobs mit Status, Dauer und Log. Eine rote Pipeline lässt sich erneut starten.
+- **Aktualisierung:** nach jedem Lauf, nach dem Verschieben einer Karte und im Hintergrund. Solange eine Pipeline läuft, alle 30 Sekunden. Wird sie grün oder rot, kommt eine Meldung.
+
 ## Activity und Budgets
 
 - **Activity:**
