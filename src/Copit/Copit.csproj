@@ -13,7 +13,7 @@
 		<ApplicationTitle>Copit</ApplicationTitle>
 		<ApplicationId>dev.copit.ide</ApplicationId>
 		<ApplicationDisplayVersion>0.4.7</ApplicationDisplayVersion>
-		<Version>0.4.6</Version>
+		<Version>0.4.7</Version>
 		<ApplicationVersion>1</ApplicationVersion>
 
 		<WindowsPackageType>None</WindowsPackageType>
