@@ -16,6 +16,8 @@ public class CopitProject
     public string Instructions { get; set; } = "";
     /// <summary>Ticket-Typ für neue Tickets in diesem Projekt (Name oder ID, leer = Standard aus den Einstellungen).</summary>
     public string IssueType { get; set; } = "";
+    /// <summary>Zuletzt gewählte Werte für Pflichtfelder der Jira-Maske (Feld-ID → Wert), als Vorgabe für neue Tickets.</summary>
+    public Dictionary<string, string> FieldDefaults { get; set; } = [];
     /// <summary>Ordner in der Projektliste ("" = ohne Ordner), Unterordner mit '/', z. B. "Kunde A/Backend".</summary>
     public string Group { get; set; } = "";
 
