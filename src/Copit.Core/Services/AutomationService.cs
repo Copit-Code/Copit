@@ -35,7 +35,7 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
         new("agent.needs_input", "Agent braucht Input", "Agent", []),
         new("agent.failed", "Agent fehlgeschlagen", "Agent", []),
         new("agent.stopped", "Agent gestoppt", "Agent", []),
-        new("agent.moved", "Karte verschoben", "Agent", [new("to", "Nach Spalte", "InProgress")]),
+        new("agent.moved", "Karte verschoben", "Agent", [new("from", "Von Spalte", ""), new("to", "Nach Spalte", "InProgress")]),
         new("git.commit", "Neuer Commit", "Git", []),
         new("git.push", "Push", "Git", []),
         new("git.branch", "Neuer Branch", "Git", []),
@@ -57,7 +57,7 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
         new("jira.worklog", "Zeit buchen", "Jira", [new("issue", "Ticket", "{{ticket}}"), new("minutes", "Minuten (leer = Agent-Zeit)"), new("comment", "Buchungstext", "{{title}}"), new("account", "Account (leer = vom Ticket / gemerkt)")]),
         new("time.check", "Stunden-Check", "Jira", []),
         new("git.commit", "Commit", "Git", [new("message", "Message", "{{ticket}}: {{title}}")]),
-        new("git.push", "Push", "Git", []),
+        new("git.push", "Push", "Git", [new("branch", "Branch (leer = aktueller Branch)", "{{branch}}")]),
         new("git.branch", "Branch anlegen", "Git", [new("name", "Name", "feature/{{ticket}}")]),
         new("gitlab.mr", "Merge Request", "GitLab", [new("target", "Ziel-Branch (leer = Default)"), new("title", "Titel", "{{ticket}}: {{title}}")]),
         new("docs.update", "Doku aktualisieren", "Allgemein", [new("ai", "Doku-Agent starten (ja/nein)", "nein"), new("commit", "Doku committen (ja/nein)", "nein")]),
@@ -133,10 +133,27 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
     {
         if (!a.Enabled || a.Trigger != e.Type) return false;
         var p = a.TriggerParams;
-        if (e.Type == "agent.moved" && p.GetValueOrDefault("to") is { Length: > 0 } to && !string.Equals(to, e.Vars.GetValueOrDefault("to"), StringComparison.OrdinalIgnoreCase)) return false;
+        if (e.Type == "agent.moved")
+        {
+            if (p.GetValueOrDefault("to") is { Length: > 0 } to && !SameColumn(to, e.Vars.GetValueOrDefault("to"))) return false;
+            if (p.GetValueOrDefault("from") is { Length: > 0 } from && !SameColumn(from, e.Vars.GetValueOrDefault("from"))) return false;
+        }
         if (e.Type == "jira.transitioned" && p.GetValueOrDefault("status") is { Length: > 0 } st && !string.Equals(st, e.Vars.GetValueOrDefault("status"), StringComparison.OrdinalIgnoreCase)) return false;
         if (e.Vars.GetValueOrDefault("automationId") is { Length: > 0 } id && id != a.Id) return false;
         return a.Conditions.All(c => Matches(c, e.Vars));
+    }
+
+    /// <summary>Spalte vergleichen – akzeptiert Enum-Namen („InProgress“) und Titel („In Progress“), ohne Groß/Klein und Leerzeichen.</summary>
+    public static bool SameColumn(string? wanted, string? actual)
+    {
+        static string Norm(string? v) => (v ?? "").Replace(" ", "").Replace("_", "").Replace("-", "").ToLowerInvariant();
+        var w = Norm(wanted);
+        if (w is "" or "*" or "(beliebig)" or "beliebig") return true;
+        var a = Norm(actual);
+        if (w == a) return true;
+        // Titel ↔ Enum-Name
+        var col = AgentStatusInfo.Columns.FirstOrDefault(c => Norm(c.Title) == a || Norm(c.Status.ToString()) == a);
+        return col.Title != null && (w == Norm(col.Title) || w == Norm(col.Status.ToString()));
     }
 
     public static Dictionary<string, string> AgentVars(ChatSession? a) => a == null ? [] : new()
@@ -271,6 +288,14 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
                 await git.CommitAllAsync(Cwd(), P("message") is { Length: > 0 } msg ? msg : "Copit-Commit");
                 return "Commit";
             case "git.push":
+                if (P("branch") is { Length: > 0 } pb)
+                {
+                    // Branch der Karte pushen – auch wenn im Ordner gerade ein anderer Branch ausgecheckt ist
+                    // Worktree gelöscht? Dann im Projekt-Repo pushen – die Branches teilen sich beide.
+                    var dir = agent?.Cwd is { } ac && Directory.Exists(ac) ? ac : (agent != null ? Agents?.RepoOf(agent) : null) ?? Cwd();
+                    await git.PushBranchAsync(dir, pb);
+                    return $"Push {pb}";
+                }
                 await git.PushAsync(Cwd());
                 return "Push";
             case "git.branch":

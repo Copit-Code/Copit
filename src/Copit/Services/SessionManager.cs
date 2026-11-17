@@ -441,10 +441,15 @@ public partial class SessionHost : ObservableObject
         set
         {
             if (Session.Status == value) return;
+            var from = Session.Status;
             Session.Status = value;
             OnPropertyChanged(); OnPropertyChanged(nameof(StatusTitle)); OnPropertyChanged(nameof(StatusColor));
             Save();
-            _mgr.Emit("agent.moved", Session, new() { ["to"] = value.ToString() });
+            _mgr.Emit("agent.moved", Session, new()
+            {
+                ["to"] = value.ToString(), ["from"] = from.ToString(),
+                ["toTitle"] = AgentStatusInfo.Title(value), ["fromTitle"] = AgentStatusInfo.Title(from),
+            });
         }
     }
 

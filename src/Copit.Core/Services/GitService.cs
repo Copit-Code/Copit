@@ -143,6 +143,18 @@ public class GitService
         return (r.StdErr + r.StdOut).Trim();
     }
 
+    /// <summary>Einen bestimmten lokalen Branch nach origin pushen (setzt Upstream), unabhängig vom ausgecheckten Branch.</summary>
+    public async Task<string> PushBranchAsync(string dir, string branch, CancellationToken ct = default)
+    {
+        branch = branch.Trim();
+        if (branch.StartsWith("refs/heads/")) branch = branch["refs/heads/".Length..];
+        var exists = await RunAsync(dir, ct, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch);
+        if (!exists.Ok) throw new InvalidOperationException($"Branch „{branch}“ gibt es in {dir} nicht.");
+        var r = await RunAsync(dir, ct, "push", "-u", "origin", $"{branch}:{branch}");
+        if (!r.Ok) throw new InvalidOperationException((r.StdErr + r.StdOut).Trim());
+        return (r.StdErr + r.StdOut).Trim();
+    }
+
     public async Task<string> DiscardAsync(string dir, string path, CancellationToken ct = default)
     {
         var r = await RunAsync(dir, ct, "checkout", "--", path);
