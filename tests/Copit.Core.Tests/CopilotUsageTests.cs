@@ -129,3 +129,13 @@ public class PushBranchTests
         try { Directory.Delete(root, true); } catch { }
     }
 }
+
+public class PushDefaultTests
+{
+    [Fact]
+    public void PushDefaultsToTheCardBranch()
+    {
+        var push = Copit.Core.Services.AutomationService.Actions.Single(a => a.Type == "git.push");
+        Assert.Equal("{{branch}}", push.Params.Single(p => p.Key == "branch").Default);
+    }
+}

@@ -21,7 +21,8 @@ public interface IAgentOps
     void SetStatus(string agentId, AgentStatus status);
 }
 
-public record ParamDef(string Key, string Label, string Placeholder = "", bool Multiline = false);
+/// <summary>Parameter einer Aktion/eines Triggers. <paramref name="Default"/> wird vorbelegt und gilt, solange der Wert nie gesetzt wurde.</summary>
+public record ParamDef(string Key, string Label, string Placeholder = "", bool Multiline = false, string? Default = null);
 public record TriggerDef(string Type, string Label, string Group, ParamDef[] Params);
 public record ActionDef(string Type, string Label, string Group, ParamDef[] Params);
 
@@ -57,7 +58,7 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
         new("jira.worklog", "Zeit buchen", "Jira", [new("issue", "Ticket", "{{ticket}}"), new("minutes", "Minuten (leer = Agent-Zeit)"), new("comment", "Buchungstext", "{{title}}"), new("account", "Account (leer = vom Ticket / gemerkt)")]),
         new("time.check", "Stunden-Check", "Jira", []),
         new("git.commit", "Commit", "Git", [new("message", "Message", "{{ticket}}: {{title}}")]),
-        new("git.push", "Push", "Git", [new("branch", "Branch (leer = aktueller Branch)", "{{branch}}")]),
+        new("git.push", "Push", "Git", [new("branch", "Branch (leer = aktueller Branch)", "{{branch}}", false, "{{branch}}")]),
         new("git.branch", "Branch anlegen", "Git", [new("name", "Name", "feature/{{ticket}}")]),
         new("gitlab.mr", "Merge Request", "GitLab", [new("target", "Ziel-Branch (leer = Default)"), new("title", "Titel", "{{ticket}}: {{title}}")]),
         new("docs.update", "Doku aktualisieren", "Allgemein", [new("ai", "Doku-Agent starten (ja/nein)", "nein"), new("commit", "Doku committen (ja/nein)", "nein")]),
@@ -230,9 +231,16 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
         return DispatchAsync(new AutomationEvent(a.Trigger, vars, agent)).ContinueWith(_ => a.Enabled = wasEnabled);
     }
 
+    /// <summary>Vorbelegungen der Aktion für Parameter, die nie gesetzt wurden (z. B. Push → {{branch}}).</summary>
+    public IEnumerable<KeyValuePair<string, string>> Defaults(string actionType) =>
+        AllActions.FirstOrDefault(a => a.Type == actionType)?.Params.Where(p => p.Default != null)
+            .Select(p => new KeyValuePair<string, string>(p.Key, p.Default!)) ?? [];
+
     private async Task<string> RunActionAsync(RuleAction act, Dictionary<string, string> vars, ChatSession? agent)
     {
-        var p = act.Params.ToDictionary(x => x.Key, x => Render(x.Value, vars));
+        var raw = new Dictionary<string, string>(act.Params);
+        foreach (var (k, v) in Defaults(act.Type)) raw.TryAdd(k, v);
+        var p = raw.ToDictionary(x => x.Key, x => Render(x.Value, vars));
         string P(string k) => p.GetValueOrDefault(k, "");
         var cwd = agent?.Cwd ?? (vars.GetValueOrDefault("repo") is { Length: > 0 } rp ? rp : Repos().FirstOrDefault());
         JiraClient Jira() => hub.Jira ?? throw new InvalidOperationException("Jira nicht konfiguriert");
@@ -288,16 +296,35 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
                 await git.CommitAllAsync(Cwd(), P("message") is { Length: > 0 } msg ? msg : "Copit-Commit");
                 return "Commit";
             case "git.push":
+            {
+                string dir, output, what;
                 if (P("branch") is { Length: > 0 } pb)
                 {
-                    // Branch der Karte pushen – auch wenn im Ordner gerade ein anderer Branch ausgecheckt ist
+                    // Branch der Karte pushen – auch wenn im Ordner gerade ein anderer Branch ausgecheckt ist.
                     // Worktree gelöscht? Dann im Projekt-Repo pushen – die Branches teilen sich beide.
-                    var dir = agent?.Cwd is { } ac && Directory.Exists(ac) ? ac : (agent != null ? Agents?.RepoOf(agent) : null) ?? Cwd();
-                    await git.PushBranchAsync(dir, pb);
-                    return $"Push {pb}";
+                    dir = agent?.Cwd is { } ac && Directory.Exists(ac) ? ac : (agent != null ? Agents?.RepoOf(agent) : null) ?? Cwd();
+                    output = await git.PushBranchAsync(dir, pb);
+                    what = pb;
                 }
-                await git.PushAsync(Cwd());
-                return "Push";
+                else
+                {
+                    dir = Cwd();
+                    output = await git.PushAsync(dir);
+                    what = "aktueller Branch";
+                }
+                var upToDate = output.Contains("Everything up-to-date", StringComparison.OrdinalIgnoreCase);
+                var hint = "";
+                if (upToDate)
+                {
+                    var gs = await git.GetStatusAsync(dir);
+                    hint = gs.Changes.Count > 0
+                        ? $" – nichts Neues gepusht: {gs.Changes.Count} Änderung(en) sind nicht committet. Füge vor dem Push die Aktion „Commit“ hinzu."
+                        : " – war schon aktuell, nichts Neues zu pushen.";
+                    if (gs.Changes.Count > 0)
+                        Notified?.Invoke(new Notice("Push: nichts Neues", $"{gs.Changes.Count} Änderung(en) in {what} sind nicht committet.", NoticeLevel.Warning, agent != null ? "agent" : null, agent?.Id));
+                }
+                return $"Push {what}{hint}";
+            }
             case "git.branch":
                 await git.CreateBranchAsync(Cwd(), P("name"));
                 return $"Branch {P("name")}";

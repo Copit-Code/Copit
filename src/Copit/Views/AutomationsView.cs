@@ -200,6 +200,8 @@ public class AutomationsView : ContentView, IActivatable
         {
             var all = _engine.AllActions.ToList();
             var adef = all.FirstOrDefault(x => x.Type == a.Type) ?? all[0];
+            // Vorbelegungen (z. B. Push → {{branch}}) als echten Wert eintragen, nicht nur als grauen Platzhalter
+            foreach (var p in adef.Params) if (p.Default != null) a.Params.TryAdd(p.Key, p.Default);
             var box = Stack(8, Row((Pick(all.Select(x => $"{x.Group} · {x.Label}").ToList(), all.IndexOf(adef), i =>
             {
                 a.Type = all[i].Type;
