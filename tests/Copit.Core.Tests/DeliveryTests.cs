@@ -88,3 +88,14 @@ public class DeliveryTests
         try { Directory.Delete(root, true); } catch { }
     }
 }
+
+public class SessionDiffParseTests
+{
+    [Fact]
+    public void ParsesUntrackedFileDiffWithoutGitHeader()
+    {
+        var files = DiffParser.Parse("--- /dev/null\n+++ b/neu.txt\n@@ -0,0 +1,2 @@\n+a\n+b\n");
+        Assert.Single(files);
+        Assert.Equal(2, files[0].Added);
+    }
+}

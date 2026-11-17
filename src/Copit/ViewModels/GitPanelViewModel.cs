@@ -48,6 +48,11 @@ public partial class GitPanelViewModel : ObservableObject
 
     public bool HasChanges => Changes.Count > 0;
     public string ChangesTitle => Changes.Count == 0 ? "Keine Änderungen" : $"{Changes.Count} Änderung{(Changes.Count == 1 ? "" : "en")}";
+    /// <summary>Ein Dialog (Diff oder Job-Log) ist offen – nur dann ist die Overlay-Ebene sichtbar und klickbar.</summary>
+    public bool AnyOverlay => ShowDiff || ShowLog;
+    partial void OnShowDiffChanged(bool value) => OnPropertyChanged(nameof(AnyOverlay));
+    partial void OnShowLogChanged(bool value) => OnPropertyChanged(nameof(AnyOverlay));
+
     public bool HasPipeline => Pipeline != null;
     public bool HasMr => MergeRequest != null;
     public bool CanCreateMr => MergeRequest == null && IsRepo && _project != null && !string.IsNullOrEmpty(_project.GitLabProject) && _hub.GitLab != null;

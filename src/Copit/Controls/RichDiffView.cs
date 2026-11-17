@@ -121,3 +121,42 @@ public class RichDiffView : ContentView
         return (a[..p], a[p..(a.Length - s)], a[(a.Length - s)..]);
     }
 }
+
+/// <summary>Ganzer Unified-Diff (eine oder mehrere Dateien) in der Rich-Darstellung – bindbar über <see cref="Diff"/>.</summary>
+public class RichDiffList : ContentView
+{
+    public static readonly BindableProperty DiffProperty = BindableProperty.Create(nameof(Diff), typeof(string), typeof(RichDiffList), "",
+        propertyChanged: (b, _, n) => ((RichDiffList)b).Render((string?)n));
+
+    public string Diff { get => (string)GetValue(DiffProperty); set => SetValue(DiffProperty, value); }
+
+    private readonly VerticalStackLayout _stack = new() { Spacing = 14, Padding = new Thickness(16, 12) };
+
+    public RichDiffList() => Content = new ScrollView { Content = _stack };
+
+    private static Color R(string key) => (Color)Application.Current!.Resources[key];
+
+    private void Render(string? diff)
+    {
+        _stack.Children.Clear();
+        var files = DiffParser.Parse(diff);
+        if (files.Count == 0 || files.All(f => f.Hunks.Count == 0 && !f.Binary && f.Status == "M"))
+        {
+            // Kein Diff (z. B. „Lade Diff…“ oder Fehlermeldung) → als Text zeigen
+            _stack.Add(new Label { Text = string.IsNullOrWhiteSpace(diff) ? "Keine Änderungen." : diff, FontSize = 12.5, TextColor = R("Text2"), LineBreakMode = LineBreakMode.WordWrap });
+            return;
+        }
+        foreach (var f in files)
+        {
+            var head = new Grid { ColumnDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)], ColumnSpacing = 10, Padding = new Thickness(10, 6), BackgroundColor = R("Panel") };
+            var (st, col) = f.Status switch { "A" => ("NEU", "Green"), "D" => ("GELÖSCHT", "Red"), "R" => ("UMBENANNT", "Cyan"), _ => ("GEÄNDERT", "Amber") };
+            head.Add(new Label { Text = st, FontSize = 9.5, FontFamily = "Cascadia Mono", TextColor = R(col), VerticalOptions = LayoutOptions.Center }, 0);
+            head.Add(new Label { Text = f.OldPath != null ? $"{f.OldPath} → {f.Path}" : f.Path, FontSize = 12.5, FontFamily = "Cascadia Mono", TextColor = R("Text"), FontAttributes = FontAttributes.Bold, LineBreakMode = LineBreakMode.MiddleTruncation, VerticalOptions = LayoutOptions.Center }, 1);
+            head.Add(new Label { Text = $"+{f.Added}", FontSize = 11, FontFamily = "Cascadia Mono", TextColor = R("Green"), VerticalOptions = LayoutOptions.Center }, 2);
+            head.Add(new Label { Text = $"−{f.Removed}", FontSize = 11, FontFamily = "Cascadia Mono", TextColor = R("Red"), VerticalOptions = LayoutOptions.Center }, 3);
+            var view = new RichDiffView();
+            view.Show(f);
+            _stack.Add(new VerticalStackLayout { Spacing = 6, Children = { head, view } });
+        }
+    }
+}
