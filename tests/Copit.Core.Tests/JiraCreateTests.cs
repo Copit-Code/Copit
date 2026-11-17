@@ -156,3 +156,45 @@ public class JiraCreateTests
         Assert.Equal("kein JSON", JiraClient.JiraErrorText("kein JSON"));
     }
 }
+
+public class TempoAccountFieldTests
+{
+    private const string Accounts = """
+        [ { "id": 140896, "key": "100_26980_3800_140896", "name": "26980_Kostenstellenaufträge 2026 - 1.2.72 - 5802_MAN Components THT/ATS", "status": "OPEN" },
+          { "id": 2, "key": "OTHER", "name": "Anderes", "status": "OPEN" } ]
+        """;
+
+    private static FakeJira Jira() => new((method, path, body) => (method, path) switch
+    {
+        ("GET", var p) when p.StartsWith("/rest/api/2/field") => (200, "[]"),
+        ("GET", var p) when p.StartsWith("/rest/tempo-accounts/1/account/key/") => (404, "{}"),
+        ("GET", var p) when p.StartsWith("/rest/tempo-accounts/1/account") => (200, Accounts),
+        // Tempo verlangt die ID – Key/Name führen zu „Account id is null“
+        ("POST", "/rest/api/2/issue") when body.Contains("\"customfield_10401\":140896") => (201, """{"key":"ST-1001"}"""),
+        ("POST", "/rest/api/2/issue") => (400, """{"errorMessages":["Account id is null"],"errors":{}}"""),
+        ("GET", var p) when p.StartsWith("/rest/api/2/issue/ST-1001") => (200, """{"key":"ST-1001","fields":{"summary":"x","customfield_10401":{"id":140896,"key":"100_26980_3800_140896","value":"26980_Kostenstellenaufträge 2026"}}}"""),
+        _ => (404, "{}"),
+    });
+
+    [Theory]
+    [InlineData("100_26980_3800_140896")]                                                     // Key
+    [InlineData("26980_Kostenstellenaufträge 2026 - 1.2.72 - 5802_MAN Components THT/ATS")]  // Anzeige-Name (z. B. vom Epic gelesen)
+    [InlineData("140896")]                                                                    // ID
+    public async Task AccountIsSentAsTempoId(string account)
+    {
+        using var jira = Jira();
+        var key = await jira.Client(new JiraSettings { AccountFieldId = "customfield_10401" })
+            .CreateIssueAsync("ST", "Titel", "", "10100", 0, null, default, account);
+        Assert.Equal("ST-1001", key);
+    }
+
+    [Fact]
+    public async Task UnknownAccountGivesClearMessage()
+    {
+        using var jira = Jira();
+        var e = await Assert.ThrowsAsync<InvalidOperationException>(() => jira.Client(new JiraSettings { AccountFieldId = "customfield_10401" })
+            .CreateIssueAsync("ST", "Titel", "", "10100", 0, null, default, "GIBTSNICHT"));
+        Assert.Contains("nicht gefunden", e.Message);
+        Assert.DoesNotContain(jira.Calls, c => c.StartsWith("POST /rest/api/2/issue"));
+    }
+}
