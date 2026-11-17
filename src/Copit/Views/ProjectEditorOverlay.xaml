@@ -51,6 +51,11 @@
                 </VerticalStackLayout>
 
                 <VerticalStackLayout Spacing="4">
+                    <Label Text="TICKET-TYP FÜR NEUE TICKETS (NAME ODER ID, OPTIONAL)" Style="{StaticResource Caption}" />
+                    <Entry Text="{Binding IssueType}" Placeholder="leer = Standard aus den Einstellungen · z. B. Aufgabe oder 10002" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="4">
                     <Label Text="KI-ANWEISUNGEN FÜR DIESES PROJEKT (OPTIONAL)" Style="{StaticResource Caption}" />
                     <Editor Text="{Binding Instructions}" AutoSize="TextChanges" MinimumHeightRequest="60"
                             Placeholder="z.B. .NET 8, Clean Architecture, Tests mit xUnit, Commit-Messages auf Englisch" />

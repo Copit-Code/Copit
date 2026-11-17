@@ -53,6 +53,8 @@ public partial class ProjectEditor : ObservableObject
     [ObservableProperty] public partial string Instructions { get; set; } = "";
     /// <summary>Ordner in der Projektliste (z. B. "Kunde A/Backend").</summary>
     [ObservableProperty] public partial string Group { get; set; } = "";
+    /// <summary>Ticket-Typ für neue Tickets (Name oder ID, leer = Standard).</summary>
+    [ObservableProperty] public partial string IssueType { get; set; } = "";
     public List<string> KnownGroups { get; set; } = [];
     [ObservableProperty] public partial string EpicInfo { get; set; } = "";
     [ObservableProperty] public partial bool EpicOk { get; set; }
@@ -68,7 +70,7 @@ public partial class ProjectEditor : ObservableObject
     {
         EditingId = p?.Id;
         Name = p?.Name ?? ""; Epic = p?.EpicKey ?? ""; Folder = p?.SourceFolder ?? ""; GitLab = p?.GitLabProject ?? "";
-        Color = p?.Color ?? Palette[Random.Shared.Next(Palette.Length)]; Instructions = p?.Instructions ?? ""; Group = p?.Group ?? Group;
+        Color = p?.Color ?? Palette[Random.Shared.Next(Palette.Length)]; Instructions = p?.Instructions ?? ""; Group = p?.Group ?? Group; IssueType = p?.IssueType ?? "";
         EpicInfo = ""; EpicOk = false; Error = "";
         IsOpen = true;
         if (!string.IsNullOrEmpty(Epic)) _ = CheckEpicAsync();
@@ -128,7 +130,7 @@ public partial class ProjectEditor : ObservableObject
         {
             Id = EditingId ?? Guid.NewGuid().ToString("N"),
             Name = Name.Trim(), EpicKey = Epic.Trim().ToUpperInvariant(), SourceFolder = Folder.Trim(),
-            GitLabProject = GitLab.Trim(), Color = Color, Instructions = Instructions, Group = ProjectFolders.Normalize(Group)
+            GitLabProject = GitLab.Trim(), Color = Color, Instructions = Instructions, Group = ProjectFolders.Normalize(Group), IssueType = IssueType.Trim()
         };
         IsOpen = false;
         if (Saved != null) await Saved(p);
@@ -164,7 +166,7 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
         if (existing != null)
         {
             existing.Name = p.Name; existing.EpicKey = p.EpicKey; existing.SourceFolder = p.SourceFolder;
-            existing.GitLabProject = p.GitLabProject; existing.Color = p.Color; existing.Instructions = p.Instructions;
+            existing.GitLabProject = p.GitLabProject; existing.Color = p.Color; existing.Instructions = p.Instructions; existing.IssueType = p.IssueType;
             ProjectFolders.Move(_data.Projects.Value, existing, p.Group);
         }
         else { list.Add(p); ProjectFolders.Add(_data.Projects.Value, p.Group); }

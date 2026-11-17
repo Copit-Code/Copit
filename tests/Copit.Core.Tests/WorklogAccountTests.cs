@@ -107,3 +107,56 @@ public class CreateIssueRetryTests
         Assert.Contains(jira.LastCreateNotes, n => n.Contains("als Kommentar"));
     }
 }
+
+public class IssueTypeTests
+{
+    [Theory]
+    [InlineData("10002", "id", "10002")]
+    [InlineData("Aufgabe (10002)", "id", "10002")]
+    [InlineData("Aufgabe · 10002", "id", "10002")]
+    [InlineData("Aufgabe", "name", "Aufgabe")]
+    [InlineData(" Task ", "name", "Task")]
+    public void IssueTypeRefAcceptsNameOrId(string input, string key, string value)
+    {
+        var r = JiraClient.IssueTypeRef(input);
+        Assert.Equal(value, r[key]!.ToString());
+    }
+
+    [Fact]
+    public async Task UnknownTypeNameIsResolvedToIdFromProject()
+    {
+        var port = new Random().Next(40001, 50000);
+        using var http = new System.Net.HttpListener();
+        http.Prefixes.Add($"http://127.0.0.1:{port}/");
+        http.Start();
+        var calls = new List<string>();
+        var server = Task.Run(async () =>
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                var ctx = await http.GetContextAsync();
+                var body = await new StreamReader(ctx.Request.InputStream).ReadToEndAsync();
+                var path = ctx.Request.Url!.AbsolutePath;
+                calls.Add($"{ctx.Request.HttpMethod} {path} {body}");
+                (int code, string reply) = (ctx.Request.HttpMethod, path) switch
+                {
+                    ("POST", _) when body.Contains("\"name\":\"Task\"") => (400, """{"errorMessages":[],"errors":{"issuetype":"Geben Sie einen gültigen Vorgangstyp an"}}"""),
+                    ("GET", var p) when p.Contains("/issuetypes") => (200, """{"values":[{"id":"10001","name":"Story","subtask":false},{"id":"10002","name":"Aufgabe","subtask":false},{"id":"10003","name":"Unteraufgabe","subtask":true}]}"""),
+                    ("POST", _) => (201, """{"id":"7","key":"SHOP-7"}"""),
+                    _ => (404, "{}"),
+                };
+                ctx.Response.StatusCode = code;
+                var bytes = System.Text.Encoding.UTF8.GetBytes(reply);
+                ctx.Response.ContentType = "application/json";
+                await ctx.Response.OutputStream.WriteAsync(bytes);
+                ctx.Response.Close();
+            }
+        });
+        var jira = new JiraClient(new JiraSettings { BaseUrl = $"http://127.0.0.1:{port}" }, "token");
+        var key = await jira.CreateIssueAsync("SHOP", "Titel", "", "Task", 0, null);
+        await server;
+        Assert.Equal("SHOP-7", key);
+        Assert.Contains("\"issuetype\":{\"id\":\"10002\"}", calls[2]);   // „Task“ → Aufgabe (10002)
+        Assert.Contains(jira.LastCreateNotes, n => n.Contains("Aufgabe (10002)"));
+    }
+}

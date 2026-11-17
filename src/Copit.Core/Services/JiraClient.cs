@@ -7,6 +7,11 @@ using Copit.Core.Models;
 
 namespace Copit.Core.Services;
 
+public record JiraIssueType(string Id, string Name, bool Subtask)
+{
+    public string Label => $"{Name} · {Id}";
+}
+
 /// <summary>REST-Client für ein selbst gehostetes Jira (Server / Data Center, API v2) inkl. optional Tempo.</summary>
 public class JiraClient
 {
@@ -131,6 +136,7 @@ public class JiraClient
             Status = f?["status"].Str("name") ?? "",
             StatusCategory = f?["status"]?["statusCategory"].Str("key") ?? "",
             IssueType = f?["issuetype"].Str("name") ?? "",
+            IssueTypeId = f?["issuetype"].Str("id") ?? "",
             Assignee = f?["assignee"].Str("displayName") ?? "",
             Priority = f?["priority"].Str("name") ?? "",
             OriginalEstimateSeconds = f.Long("timeoriginalestimate"),
@@ -380,7 +386,7 @@ public class JiraClient
             ["project"] = new JsonObject { ["key"] = projectKey },
             ["summary"] = summary,
             ["description"] = description,
-            ["issuetype"] = new JsonObject { ["name"] = string.IsNullOrWhiteSpace(issueType) ? _s.DefaultIssueType : issueType },
+            ["issuetype"] = IssueTypeRef(string.IsNullOrWhiteSpace(issueType) ? _s.DefaultIssueType : issueType),
         };
         if (estimateHours > 0)
             fields["timetracking"] = new JsonObject { ["originalEstimate"] = FormatEstimate(estimateHours) };
@@ -401,6 +407,23 @@ public class JiraClient
             try { node = await PostAsync("rest/api/2/issue", new JsonObject { ["fields"] = fields.DeepClone() }, ct); break; }
             catch (ApiException e) when (e.StatusCode == 400 && attempt < 4)
             {
+                // Typ per Name abgelehnt (z. B. lokalisiert „Aufgabe“ statt „Task“) → passende ID aus Jira suchen
+                if (e.Message.Contains("issuetype", StringComparison.OrdinalIgnoreCase) && fields["issuetype"]?["name"] is { } typeName)
+                {
+                    var types = await GetIssueTypesAsync(projectKey, ct);
+                    var match = types.FirstOrDefault(t => t.Name.Equals(typeName.ToString(), StringComparison.OrdinalIgnoreCase))
+                                ?? types.FirstOrDefault(t => !t.Subtask && TaskAliases.Contains(typeName.ToString()) && TaskAliases.Contains(t.Name));
+                    if (match == null)
+                        throw new InvalidOperationException($"Ticket-Typ \"{typeName}\" gibt es im Projekt {projectKey} nicht. Verfügbar: {string.Join(", ", types.Select(t => $"{t.Name} ({t.Id})"))}");
+                    fields["issuetype"] = new JsonObject { ["id"] = match.Id };
+                    LastCreateNotes.Add($"Ticket-Typ als {match.Name} ({match.Id}) angelegt");
+                    continue;
+                }
+                if (e.Message.Contains("issuetype", StringComparison.OrdinalIgnoreCase) && fields["issuetype"]?["id"] is { } typeId)
+                {
+                    var types = await GetIssueTypesAsync(projectKey, ct);
+                    throw new InvalidOperationException($"Ticket-Typ mit ID {typeId} ist im Projekt {projectKey} nicht erlaubt. Verfügbar: {string.Join(", ", types.Select(t => $"{t.Name} ({t.Id})"))}");
+                }
                 var bad = UnsettableFields(e.Message).Where(f => optional.Contains(f) && fields.ContainsKey(f)).ToList();
                 if (bad.Count == 0) throw;
                 foreach (var f in bad) { dropped[f] = fields[f]?.DeepClone(); fields.Remove(f); }
@@ -409,6 +432,40 @@ public class JiraClient
         var key = node.Str("key");
         if (dropped.Count > 0) await RestoreDroppedFieldsAsync(key, dropped, description, estimateHours, epicKey, ct);
         return key;
+    }
+
+    private static readonly HashSet<string> TaskAliases = new(StringComparer.OrdinalIgnoreCase) { "Task", "Aufgabe", "Tâche", "Tarea", "Attività" };
+
+    /// <summary>Ticket-Typ als Name oder ID: "10002", "Aufgabe" oder "Aufgabe (10002)" / "Aufgabe · 10002".</summary>
+    public static JsonObject IssueTypeRef(string value)
+    {
+        value = value.Trim();
+        var m = System.Text.RegularExpressions.Regex.Match(value, @"^(?:.*?[\s(·]+)?(\d+)\)?$");
+        return m.Success ? new JsonObject { ["id"] = m.Groups[1].Value } : new JsonObject { ["name"] = value };
+    }
+
+    /// <summary>Ticket-Typen, die im Projekt angelegt werden können (neuere und ältere Jira-Versionen).</summary>
+    public async Task<List<JiraIssueType>> GetIssueTypesAsync(string projectKey, CancellationToken ct = default)
+    {
+        static List<JiraIssueType> Read(JsonNode? arr) => [.. (arr as JsonArray ?? [])
+            .Where(t => t != null).Select(t => new JiraIssueType(t.Str("id"), t.Str("name"), t?["subtask"]?.GetValue<bool>() ?? false))
+            .Where(t => t.Id.Length > 0)];
+        try
+        {
+            var n = await GetAsync($"rest/api/2/issue/createmeta/{Uri.EscapeDataString(projectKey)}/issuetypes?maxResults=100", ct);
+            var list = Read(n?["values"] ?? n);
+            if (list.Count > 0) return list;
+        }
+        catch (ApiException) { }
+        try
+        {
+            var n = await GetAsync($"rest/api/2/issue/createmeta?projectKeys={Uri.EscapeDataString(projectKey)}", ct);
+            var list = Read(n?["projects"]?[0]?["issuetypes"]);
+            if (list.Count > 0) return list;
+        }
+        catch (ApiException) { }
+        var p = await GetAsync($"rest/api/2/project/{Uri.EscapeDataString(projectKey)}", ct);
+        return Read(p?["issueTypes"]);
     }
 
     /// <summary>Hinweise zum letzten angelegten Ticket (z. B. Beschreibung als Kommentar nachgetragen).</summary>
