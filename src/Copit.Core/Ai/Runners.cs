@@ -178,22 +178,32 @@ public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings
 
         yield return new AgentInit("", string.IsNullOrWhiteSpace(model) ? "copilot (Standard)" : model, [], request.Mode.ToString());
         var full = new StringBuilder();
+        var usage = new CopilotUsageParser();
         var started = DateTime.Now;
         await foreach (var e in Pump(cmd, args, request.WorkingDirectory, null,
                            line =>
                            {
                                var clean = GitLabClient.StripAnsi(line);
+                               lock (usage) if (usage.Feed(clean)) return [];
                                lock (full) full.AppendLine(clean);
                                return [new AgentTextDelta(clean + "\n")];
                            },
-                           line => line.Length > 0 ? new AgentStatusLine(GitLabClient.StripAnsi(line)) : null,
+                           line =>
+                           {
+                               var clean = GitLabClient.StripAnsi(line);
+                               lock (usage) if (usage.Feed(clean)) return null;
+                               return clean.Length > 0 ? new AgentStatusLine(clean) : null;
+                           },
                            (res, err) =>
                            {
                                string text;
                                lock (full) text = full.ToString().Trim();
                                var isError = !res.Ok;
                                if (isError && text.Length == 0) text = err.ToString().Trim();
-                               return new AgentResult(isError, text, 0, (long)(DateTime.Now - started).TotalMilliseconds, 1, [], null, isError ? "error" : "success");
+                               TokenUsage? tokens; double premium;
+                               lock (usage) { tokens = usage.Usage; premium = usage.PremiumRequests; }
+                               return new AgentResult(isError, text, 0, (long)(DateTime.Now - started).TotalMilliseconds, 1, [], null,
+                                   isError ? "error" : "success", tokens, premium);
                            }, ct))
             yield return e;
     }

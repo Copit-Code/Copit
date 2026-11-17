@@ -816,10 +816,13 @@ public partial class SessionHost : ObservableObject
                     Session.Tokens += usage.Total;
                     Session.OutputTokens += usage.Output;
                 }
+                run.PremiumRequests = r.PremiumRequests;
                 if (Provider == AiProvider.Copilot)
                 {
-                    // Kontext grob schätzen (Copilot liefert keine Token-Zahlen)
-                    Session.ContextTokens = Session.Messages.Sum(m => (long)(m.Text.Length + (m.ToolResult?.Length ?? 0))) / 4;
+                    // Kontext: echte Eingabe-Tokens aus der Copilot-Zusammenfassung, sonst grob schätzen
+                    Session.ContextTokens = r.Usage is { } cu && cu.Input + cu.CacheRead > 0
+                        ? cu.Input + cu.CacheRead + cu.CacheWrite
+                        : Session.Messages.Sum(m => (long)(m.Text.Length + (m.ToolResult?.Length ?? 0))) / 4;
                 }
                 NotifyContext();
                 if (r.IsError && r.Subtype != "cancelled")

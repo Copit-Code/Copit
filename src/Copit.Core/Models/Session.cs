@@ -35,6 +35,8 @@ public class AgentRun
     public long OutputTokens { get; set; }
     public long CacheRead { get; set; }
     public long CacheWrite { get; set; }
+    /// <summary>Copilot: geschätzte Premium Requests laut CLI.</summary>
+    public double PremiumRequests { get; set; }
     public bool? Ok { get; set; }
     public long TotalTokens => InputTokens + OutputTokens + CacheRead + CacheWrite;
 }
