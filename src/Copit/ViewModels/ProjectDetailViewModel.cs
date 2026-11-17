@@ -317,7 +317,9 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
             var epicAcc = string.IsNullOrWhiteSpace(Project.EpicKey) ? null : (await _hub.RequireJira.GetIssueAsync(Project.EpicKey))?.Account;
             var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, epicAcc);
             ShowTicket = false;
-            _toast.Success($"Ticket {key} angelegt", TicketSummary);
+            var notes = _hub.RequireJira.LastCreateNotes;
+            if (notes.Count > 0) _toast.Show($"Ticket {key} angelegt", string.Join(" · ", notes), NoticeLevel.Warning);
+            else _toast.Success($"Ticket {key} angelegt", TicketSummary);
             await LoadAsync();
         }
         catch (Exception e) { _toast.Error(e, "Ticket konnte nicht angelegt werden"); }
