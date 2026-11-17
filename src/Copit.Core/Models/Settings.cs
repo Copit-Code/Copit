@@ -69,6 +69,8 @@ public class AiSettings
     public string CopilotModel { get; set; } = "";
     public string ClaudeExtraArgs { get; set; } = "";
     public string CopilotExtraArgs { get; set; } = "";
+    /// <summary>Preis pro Copilot Premium Request in USD (für Kosten in Activity/Budgets). Standard: Preis für zusätzliche Requests.</summary>
+    public double CopilotPremiumRequestUsd { get; set; } = 0.04;
     /// <summary>Wird jeder Session als zusätzliche System-Anweisung mitgegeben.</summary>
     public string GlobalInstructions { get; set; } = "Antworte auf Deutsch. Halte Antworten kompakt.";
     /// <summary>Neue Agents mit Branch arbeiten in einem eigenen git worktree.</summary>

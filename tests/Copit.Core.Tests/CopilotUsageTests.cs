@@ -12,6 +12,44 @@ public class CopilotUsageTests
     }
 
     [Fact]
+    public void ParsesCurrentCliSummary()
+    {
+        // So rendert Copilot CLI 1.x die Zusammenfassung (stderr, Labels auf 11 Zeichen aufgefüllt)
+        var (p, text) = Run("""
+            Die Datei enthält 3 Klassen.
+
+            Changes    +12 -3
+            Requests   1.5 Premium (1m 8s)
+            Tokens     ↑ 12.6k (10.2k cached, 1k written) • ↓ 297 (50 reasoning)
+            """);
+        Assert.Equal(new TokenUsage(1_400, 297, 10_200, 1_000), p.Usage);
+        Assert.Equal(1.5, p.PremiumRequests, 3);
+        Assert.Equal(12, p.LinesAdded);
+        Assert.Equal(3, p.LinesRemoved);
+        Assert.Equal("Die Datei enthält 3 Klassen.", string.Join("\n", text).Trim());
+    }
+
+    [Fact]
+    public void ParsesCurrentSummaryWithoutCacheAndWithCredits()
+    {
+        var (p, _) = Run("""
+            Changes    +0 -0
+            AI Credits 0.12 (8s)
+            Tokens     ↑ 850 • ↓ 1.2m
+            """);
+        Assert.Equal(new TokenUsage(850, 1_200_000, 0, 0), p.Usage);
+        Assert.Equal(0.12, p.AiCredits, 3);
+        Assert.Equal(0, p.PremiumRequests);
+    }
+
+    [Fact]
+    public void ToleratesBrokenArrowEncoding()
+    {
+        var (p, _) = Run("Tokens     â†‘ 2.5k (1k cached) â€¢ â†“ 40");
+        Assert.Equal(new TokenUsage(1_500, 40, 1_000, 0), p.Usage);
+    }
+
+    [Fact]
     public void ParsesClassicSummaryAndKeepsAnswer()
     {
         var (p, text) = Run("""

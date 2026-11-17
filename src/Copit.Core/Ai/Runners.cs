@@ -202,7 +202,9 @@ public class CopilotCliRunner(SettingsService settings) : CliRunnerBase(settings
                                if (isError && text.Length == 0) text = err.ToString().Trim();
                                TokenUsage? tokens; double premium;
                                lock (usage) { tokens = usage.Usage; premium = usage.PremiumRequests; }
-                               return new AgentResult(isError, text, 0, (long)(DateTime.Now - started).TotalMilliseconds, 1, [], null,
+                               // Kosten = Premium Requests × Preis (Copilot meldet keine Dollar-Beträge)
+                               var cost = premium * Math.Max(0, Settings.Settings.Ai.CopilotPremiumRequestUsd);
+                               return new AgentResult(isError, text, cost, (long)(DateTime.Now - started).TotalMilliseconds, 1, [], null,
                                    isError ? "error" : "success", tokens, premium);
                            }, ct))
             yield return e;
