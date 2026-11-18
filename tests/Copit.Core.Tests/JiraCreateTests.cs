@@ -8,17 +8,23 @@ namespace Copit.Core.Tests;
 /// <summary>Minimaler Jira-Server für Tests: beantwortet Anfragen über eine Routing-Funktion und protokolliert sie.</summary>
 internal sealed class FakeJira : IDisposable
 {
-    private readonly HttpListener _http = new();
+    private HttpListener _http = new();
     private readonly CancellationTokenSource _cts = new();
     public List<string> Calls { get; } = [];
-    public string Url { get; }
+    public string Url { get; private set; } = "";
 
     public FakeJira(Func<string, string, string, (int Code, string Body)> route)
     {
-        var port = Random.Shared.Next(50001, 60000);
-        Url = $"http://127.0.0.1:{port}";
-        _http.Prefixes.Add(Url + "/");
-        _http.Start();
+        // Freien Port suchen: unter Windows sind Teile des Bereichs reserviert oder von parallelen Tests belegt
+        for (var attempt = 0; ; attempt++)
+        {
+            var port = Random.Shared.Next(20000, 45000);
+            Url = $"http://127.0.0.1:{port}";
+            _http = new HttpListener();   // nach fehlgeschlagenem Start() ist eine Instanz unter Windows unbrauchbar
+            _http.Prefixes.Add(Url + "/");
+            try { _http.Start(); break; }
+            catch (HttpListenerException) when (attempt < 30) { _http.Close(); }
+        }
         _ = Task.Run(async () =>
         {
             while (!_cts.IsCancellationRequested)

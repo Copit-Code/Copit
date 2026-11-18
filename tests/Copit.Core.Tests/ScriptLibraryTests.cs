@@ -67,7 +67,13 @@ public class ScriptLibraryTests
         Directory.CreateDirectory(Path.Combine(root, "src")); Directory.CreateDirectory(Path.Combine(root, "bin"));
         File.WriteAllText(Path.Combine(root, "src", "a.cs"), "class A {}\n// TODO: aufräumen\n");
         File.WriteAllText(Path.Combine(root, "bin", "b.cs"), "// TODO: ignorieren\n");
-        var psi = new ProcessStartInfo(pwsh, ["-NoProfile", "-File", Path.Combine(lib, "suche.ps1"), "-Muster", "TODO"]) { WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true };
+        // Ausgabe explizit als UTF-8, sonst hängt das „ä“ unter Windows von der Konsolen-Codepage ab
+        var script = Path.Combine(lib, "suche.ps1").Replace("'", "''");
+        var psi = new ProcessStartInfo(pwsh, ["-NoProfile", "-Command", $"[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); & '{script}' -Muster TODO"])
+        {
+            WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8, StandardErrorEncoding = System.Text.Encoding.UTF8,
+        };
         using var p = Process.Start(psi)!;
         var o = p.StandardOutput.ReadToEnd(); var e = p.StandardError.ReadToEnd(); p.WaitForExit();
         Assert.True(p.ExitCode == 0, e);
