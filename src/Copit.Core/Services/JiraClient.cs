@@ -69,15 +69,29 @@ public class JiraClient
         return (_myself.Str("name"), _myself.Str("key"), _myself.Str("displayName"));
     }
 
+    private string? _accountField;
+    private bool _accountFieldResolved;
+
+    /// <summary>Account-Feld: aus den Einstellungen, sonst automatisch erkannt (Tempo-Feldtyp, sonst Feldname „Account“/„Konto“).</summary>
+    public string? AccountField => !string.IsNullOrWhiteSpace(_s.AccountFieldId) ? _s.AccountFieldId.Trim() : _accountField;
+
+    private async Task EnsureAccountFieldAsync(CancellationToken ct)
+    {
+        if (_accountFieldResolved || !string.IsNullOrWhiteSpace(_s.AccountFieldId)) return;
+        _accountFieldResolved = true;
+        _accountField = (await DetectFieldsSafeAsync(ct))?.Account;
+    }
+
     private string[] Fields =>
     [
         "summary", "status", "issuetype", "assignee", "priority", "updated", "description",
         "timeoriginalestimate", "timespent", "timeestimate", "aggregatetimespent",
-        .. string.IsNullOrWhiteSpace(_s.AccountFieldId) ? Array.Empty<string>() : [_s.AccountFieldId]
+        .. AccountField is { } acc ? [acc] : Array.Empty<string>()
     ];
 
     public async Task<List<JiraIssue>> SearchAsync(string jql, int max = 300, CancellationToken ct = default)
     {
+        await EnsureAccountFieldAsync(ct);
         var result = new List<JiraIssue>();
         int startAt = 0;
         while (result.Count < max)
@@ -95,6 +109,7 @@ public class JiraClient
 
     public async Task<JiraIssue?> GetIssueAsync(string key, CancellationToken ct = default)
     {
+        await EnsureAccountFieldAsync(ct);
         try
         {
             var node = await GetAsync($"rest/api/2/issue/{Uri.EscapeDataString(key)}?fields={string.Join(',', Fields)}", ct);
@@ -151,7 +166,7 @@ public class JiraClient
         };
         issue.Url = IssueUrl(issue.Key);
         if (DateTime.TryParse(f.Str("updated"), CultureInfo.InvariantCulture, DateTimeStyles.None, out var upd)) issue.Updated = upd;
-        if (!string.IsNullOrWhiteSpace(_s.AccountFieldId)) issue.Account = ReadAccount(f?[_s.AccountFieldId]);
+        if (AccountField is { } accField) issue.Account = ReadAccount(f?[accField]);
         return issue;
     }
 
@@ -192,7 +207,7 @@ public class JiraClient
                     if (!DateTimeOffset.TryParse(w.Str("started"), CultureInfo.InvariantCulture, DateTimeStyles.None, out var started)) continue;
                     var d = DateOnly.FromDateTime(started.LocalDateTime);
                     if (d < from || d > to) continue;
-                    var accountField = !string.IsNullOrWhiteSpace(_s.AccountFieldId);
+                    var accountField = AccountField != null;
                     lock (result)
                         result.Add(new JiraWorklog
                         {
@@ -297,13 +312,27 @@ public class JiraClient
     }
 
     /// <summary>
-    /// Bucht einen Worklog. Mit Account geht die Buchung immer über Tempo (nur dort gibt es Accounts) –
-    /// danach wird geprüft, ob der Account im angelegten Worklog wirklich gesetzt ist.
+    /// Bucht einen Worklog. Standard ist die normale Jira-Worklog-API (wie im bewährten Buchungstool): Tempo übernimmt
+    /// den Account dann selbst vom Ticket. Nur wenn ein ANDERER Account als der des Tickets gebucht werden soll
+    /// (z. B. Ticket ohne Account, Account gemerkt), geht die Buchung über die Tempo-API mit Account-Attribut.
     /// </summary>
-    /// <returns>Gebuchter Account laut Jira/Tempo (null = ohne Account gebucht).</returns>
+    /// <returns>Gebuchter Account (null = ohne Account gebucht).</returns>
     public async Task<string?> AddWorklogAsync(string issueKey, DateTime start, long seconds, string comment, string? account, CancellationToken ct = default)
     {
-        if (_s.UseTempo || !string.IsNullOrWhiteSpace(account))
+        string? ticketAccount = null;
+        if (!string.IsNullOrWhiteSpace(account))
+        {
+            try { ticketAccount = (await GetIssueAsync(issueKey, ct))?.Account; } catch { /* Ticket nicht lesbar → über Tempo buchen */ }
+        }
+        if (string.IsNullOrWhiteSpace(account) || (ticketAccount != null && await SameAccountAsync(ticketAccount, account, ct)))
+        {
+            var wl = new { comment, started = FormatJiraDate(start), timeSpentSeconds = seconds };
+            try { await PostAsync($"rest/api/2/issue/{Uri.EscapeDataString(issueKey)}/worklog", wl, ct); }
+            catch (ApiException e) { throw new InvalidOperationException($"Buchung auf {issueKey} fehlgeschlagen: {JiraErrorText(e.Message)}"); }
+            return ticketAccount;
+        }
+
+        // Anderer Account als am Ticket → nur über Tempo möglich
         {
             var me = await GetMyselfAsync(ct);
             var worker = string.IsNullOrEmpty(me.Key) ? me.Name : me.Key;
@@ -324,7 +353,7 @@ public class JiraClient
             };
             JsonNode? res;
             try { res = await PostAsync("rest/tempo-timesheets/4/worklogs/", body, ct); }
-            catch (ApiException e) when (!_s.UseTempo && e.StatusCode == 404)
+            catch (ApiException e) when (e.StatusCode == 404)
             {
                 throw new InvalidOperationException($"Für {issueKey} ist ein Account hinterlegt, aber Tempo ist nicht erreichbar – ohne Tempo kann Jira keinen Account buchen. Nichts gebucht.");
             }
@@ -341,10 +370,13 @@ public class JiraClient
                 throw new InvalidOperationException($"Worklog auf {issueKey} angelegt, aber Tempo hat den Account \"{accKey}\" nicht übernommen (gebucht: \"{actual ?? "keiner"}\"). Bitte in Tempo prüfen.");
             return actual ?? accKey;
         }
+    }
 
-        var wl = new { comment, started = FormatJiraDate(start), timeSpentSeconds = seconds };
-        await PostAsync($"rest/api/2/issue/{Uri.EscapeDataString(issueKey)}/worklog", wl, ct);
-        return null;
+    /// <summary>Gleicher Account? Direkt (Key/Name/ID) oder über den aufgelösten Tempo-Key.</summary>
+    private async Task<bool> SameAccountAsync(string a, string b, CancellationToken ct)
+    {
+        if (string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+        return string.Equals(await TempoAccountKeyAsync(a, ct), await TempoAccountKeyAsync(b, ct), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Account (Key, Name oder ID) → Tempo-Account-Key fürs Worklog-Attribut. Ohne Treffer: Eingabe unverändert.</summary>
@@ -357,7 +389,7 @@ public class JiraClient
 
     /// <summary>Fehler betrifft das Account-Feld (dann nächste Schreibweise probieren, sonst echten Fehler weiterreichen).</summary>
     private bool IsAccountError(string message) =>
-        message.Contains("account", StringComparison.OrdinalIgnoreCase) || (!string.IsNullOrEmpty(_s.AccountFieldId) && message.Contains(_s.AccountFieldId, StringComparison.OrdinalIgnoreCase));
+        message.Contains("account", StringComparison.OrdinalIgnoreCase) || (AccountField is { } af && message.Contains(af, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Tempo-Account zu Key, ID oder Namen (auch „Key · Name“), notfalls direkt per Key bei Tempo.</summary>
     public async Task<TempoAccount?> ResolveTempoAccountAsync(string account, CancellationToken ct = default)
@@ -525,7 +557,10 @@ public class JiraClient
         if (_fieldIds != null) return _fieldIds;
         var arr = await GetAsync("rest/api/2/field", ct) as JsonArray ?? [];
         string? F(string custom) => arr.FirstOrDefault(f => f?["schema"]?["custom"]?.ToString() == custom)?["id"]?.ToString();
-        return _fieldIds = new JiraFieldIds(F("com.pyxis.greenhopper.jira:gh-epic-link"), F("com.tempoplugin.tempo-accounts:accounts.customfield"), F("com.pyxis.greenhopper.jira:gh-epic-label"));
+        string? Named(params string[] names) => arr.FirstOrDefault(f => names.Any(n => string.Equals(f?["name"]?.ToString()?.Trim(), n, StringComparison.OrdinalIgnoreCase)))?["id"]?.ToString();
+        return _fieldIds = new JiraFieldIds(F("com.pyxis.greenhopper.jira:gh-epic-link"),
+            F("com.tempoplugin.tempo-accounts:accounts.customfield") ?? Named("Account", "Konto"),
+            F("com.pyxis.greenhopper.jira:gh-epic-label"));
     }
 
     private async Task<JiraFieldIds?> DetectFieldsSafeAsync(CancellationToken ct)
