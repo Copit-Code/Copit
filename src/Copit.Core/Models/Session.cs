@@ -37,6 +37,14 @@ public class AgentRun
     public long CacheWrite { get; set; }
     /// <summary>Copilot: geschätzte Premium Requests laut CLI.</summary>
     public double PremiumRequests { get; set; }
+    /// <summary>Copilot: verbrauchte AI Credits laut CLI.</summary>
+    public double AiCredits { get; set; }
+
+    /// <summary>Aktuelle Copilot-Preise (aus den Einstellungen) für Läufe, die ohne Preis gelaufen sind.</summary>
+    public static (double Premium, double Credit) CopilotPrices { get; set; }
+
+    /// <summary>Kosten des Laufs. Lief er ohne hinterlegten Preis, wird mit dem aktuellen Copilot-Preis nachgerechnet.</summary>
+    public double Cost => CostUsd > 0 ? CostUsd : PremiumRequests * Math.Max(0, CopilotPrices.Premium) + AiCredits * Math.Max(0, CopilotPrices.Credit);
     public bool? Ok { get; set; }
     public long TotalTokens => InputTokens + OutputTokens + CacheRead + CacheWrite;
 }
@@ -60,6 +68,8 @@ public class ChatSession
     /// <summary>Vom Nutzer gewählte Kontextgröße (null = automatisch nach Modell).</summary>
     public long? ContextOverride { get; set; }
     public double TotalCostUsd { get; set; }
+    /// <summary>Kosten inkl. nachgerechneter Copilot-Läufe (Preis erst nach dem Lauf hinterlegt).</summary>
+    public double Cost => Math.Max(TotalCostUsd, Runs.Sum(r => r.Cost));
     public List<string> AllowedTools { get; set; } = [];
     /// <summary>Prompt der beim letzten Lauf noch nicht beendet war (Absturz / Neustart).</summary>
     public string? PendingPrompt { get; set; }

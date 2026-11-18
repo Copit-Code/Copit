@@ -419,7 +419,7 @@ public partial class DocsService(DataService data, ConnectionHub hub, GitService
                     foreach (var a in ta.OrderByDescending(a => a.CreatedAt))
                     {
                         sb.AppendLine($"### {Esc(a.Title)} ({a.CreatedAt:dd.MM.yyyy})\n");
-                        sb.AppendLine($"{a.Provider} · Agent-Zeit {TimeSpan.FromMilliseconds(a.AgentMs):h\\:mm} h · {(a.TotalCostUsd > 0 ? $"${a.TotalCostUsd:0.00} · " : "")}+{a.LinesAdded}/−{a.LinesRemoved} Zeilen in {a.FilesChanged} Dateien · Status {AgentStatusInfo.Title(a.Status)}\n");
+                        sb.AppendLine($"{a.Provider} · Agent-Zeit {TimeSpan.FromMilliseconds(a.AgentMs):h\\:mm} h · {(a.Cost > 0 ? $"${a.Cost:0.00} · " : "")}+{a.LinesAdded}/−{a.LinesRemoved} Zeilen in {a.FilesChanged} Dateien · Status {AgentStatusInfo.Title(a.Status)}\n");
                         if (!string.IsNullOrWhiteSpace(a.Summary)) sb.AppendLine("> " + Linkify(Short(a.Summary!, 600), rel, folder, known).Replace("\n", "\n> ") + "\n");
                     }
                 }

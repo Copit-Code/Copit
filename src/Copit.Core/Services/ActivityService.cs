@@ -262,7 +262,7 @@ public class ActivityService
             }
             if (agent != null)
             {
-                var runCost = agent.Runs.Where(r => r.Start >= from && r.Start < to).Sum(r => r.CostUsd);
+                var runCost = agent.Runs.Where(r => r.Start >= from && r.Start < to).Sum(r => r.Cost);
                 if (runCost > 0) { var f = a.CostUsd > 0 ? runCost / a.CostUsd : 0; a.SegmentCosts = a.SegmentCosts.Select(x => x * f).ToList(); a.CostUsd = runCost; a.CostExact = true; }
             }
             outp.Add(a);
@@ -278,7 +278,7 @@ public class ActivityService
                 Id = "copit:" + ag.Id, Source = "copit", Title = ag.Title, ProjectPath = path, Project = ProjectName(path), Branch = ag.Branch,
                 Entry = $"Copit · {ag.Provider}", Models = string.IsNullOrEmpty(ag.Model) ? [] : [Pricing.PrettyModel(ag.Model)], Prompts = runs.Count,
                 Segments = runs.Select(r => (r.Start, r.End ?? DateTime.Now)).ToList(), InputTokens = runs.Sum(r => r.InputTokens), OutputTokens = runs.Sum(r => r.OutputTokens),
-                CacheRead = runs.Sum(r => r.CacheRead), CacheWrite = runs.Sum(r => r.CacheWrite), CostUsd = runs.Sum(r => r.CostUsd), CostExact = ag.Provider == AiProvider.Claude,
+                CacheRead = runs.Sum(r => r.CacheRead), CacheWrite = runs.Sum(r => r.CacheWrite), CostUsd = runs.Sum(r => r.Cost), CostExact = ag.Provider == AiProvider.Claude,
                 AgentId = ag.Id, Ticket = ag.Ticket,
             });
         }

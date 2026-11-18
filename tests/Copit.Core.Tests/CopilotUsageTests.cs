@@ -185,3 +185,55 @@ public class PushDefaultTests
         Assert.Equal("{{branch}}", push.Params.Single(p => p.Key == "branch").Default);
     }
 }
+
+public class CopilotUsageLooseTests
+{
+    private static CopilotUsageParser Stderr(string output)
+    {
+        var p = new CopilotUsageParser();
+        foreach (var l in output.Replace("\r", "").Split('\n')) p.Feed(l, fromStderr: true);
+        return p;
+    }
+
+    [Theory]
+    [InlineData("AI Credits used: 0.12", 0.12)]
+    [InlineData("Requests   0.5 AI credits (8s)", 0.5)]
+    [InlineData("Credits    1.25", 1.25)]
+    [InlineData("Usage      3 credits", 3)]
+    public void RecognizesOtherCreditFormatsOnStderr(string line, double credits)
+    {
+        var p = Stderr($"Changes    +1 -0\n{line}\nTokens     ↑ 1.2k • ↓ 300");
+        Assert.Equal(credits, p.AiCredits, 3);
+        Assert.Empty(p.UnknownSummaryLines);
+    }
+
+    [Fact]
+    public void BalanceIsNotUsageAndUnknownLinesAreKept()
+    {
+        var p = Stderr("Changes    +1 -0\nYou have 40 credits remaining\nBilling    metered (org)\nTokens     ↑ 1.2k • ↓ 300");
+        Assert.Equal(0, p.AiCredits);
+        Assert.Contains("Billing metered (org)", p.UnknownSummaryLines);
+    }
+
+    [Fact]
+    public void AgentTextOnStdoutIsNotTreatedAsCredits()
+    {
+        var p = new CopilotUsageParser();
+        Assert.False(p.Feed("Das kostet etwa 3 credits pro Aufruf."));
+        Assert.Equal(0, p.AiCredits);
+    }
+
+    [Fact]
+    public void RunWithoutPriceIsRepricedWithCurrentPrice()
+    {
+        var old = Copit.Core.Models.AgentRun.CopilotPrices;
+        try
+        {
+            Copit.Core.Models.AgentRun.CopilotPrices = (0.04, 0.01);
+            var run = new Copit.Core.Models.AgentRun { AiCredits = 5, PremiumRequests = 1 };
+            Assert.Equal(0.09, run.Cost, 3);
+            Assert.Equal(0.5, new Copit.Core.Models.AgentRun { CostUsd = 0.5, AiCredits = 5 }.Cost, 3);
+        }
+        finally { Copit.Core.Models.AgentRun.CopilotPrices = old; }
+    }
+}

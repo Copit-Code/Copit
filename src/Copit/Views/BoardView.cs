@@ -58,7 +58,7 @@ public class BoardView : ContentView, IActivatable
 
         // Kopf
         var running = agents.Count(a => _mgr.Host(a).IsRunning);
-        var cost = agents.Sum(a => a.TotalCostUsd);
+        var cost = agents.Sum(a => a.Cost);
         var head = Row(
             (Stack(3, Caption("Agents"), H1("Board"),
                 Text($"{agents.Count} Agents · {running} aktiv · {agents.Count(a => a.Status == AgentStatus.NeedInput)} warten auf dich · {Money(cost)} gesamt", 12, "Muted")), Star),
@@ -169,7 +169,7 @@ public class BoardView : ContentView, IActivatable
         var stats = new HorizontalStackLayout { Spacing = 10 };
         stats.Add(HStack(3, Mono("AI", 9.5, "Muted"), Mono(SessionHost.FmtMs(a.AiMs), 10.5, "Text2")));
         stats.Add(HStack(3, Mono("AGENT", 9.5, "Muted"), Mono(SessionHost.FmtMs(a.AgentMs), 10.5, "Text2")));
-        if (a.TotalCostUsd > 0) stats.Add(Mono(Money(a.TotalCostUsd), 10.5, "Text2"));
+        if (a.Cost > 0) stats.Add(Mono(Money(a.Cost), 10.5, "Text2"));
         if (a.LinesAdded + a.LinesRemoved > 0)
             stats.Add(HStack(3, Mono($"+{a.LinesAdded}", 10.5, "Green"), Mono($"−{a.LinesRemoved}", 10.5, "Red")));
         body.Add(Line());

@@ -160,7 +160,7 @@ public class AutomationService(DataService data, ConnectionHub hub, TimeBookingS
     public static Dictionary<string, string> AgentVars(ChatSession? a) => a == null ? [] : new()
     {
         ["agentId"] = a.Id, ["title"] = a.Title, ["ticket"] = a.Ticket ?? "", ["branch"] = a.Branch ?? "", ["status"] = AgentStatusInfo.Title(a.Status),
-        ["summary"] = a.Summary ?? "", ["provider"] = a.Provider.ToString(), ["cost"] = a.TotalCostUsd.ToString("0.00"),
+        ["summary"] = a.Summary ?? "", ["provider"] = a.Provider.ToString(), ["cost"] = a.Cost.ToString("0.00"),
         ["agentMinutes"] = (a.AgentMs / 60000).ToString(), ["aiMinutes"] = (a.AiMs / 60000).ToString(),
         ["lines"] = $"+{a.LinesAdded} -{a.LinesRemoved}", ["files"] = a.FilesChanged.ToString(), ["repo"] = a.Cwd ?? "",
         // Zusätzlich für Extensions (z. B. Obsidian-Notizen): Rohwerte statt formatierter Texte

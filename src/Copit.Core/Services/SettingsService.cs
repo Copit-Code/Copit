@@ -37,10 +37,20 @@ public class SettingsService
 
     public SettingsService(ISecretProtector protector) => _protector = protector;
 
-    public AppSettings Settings => _store.Value;
+    public AppSettings Settings
+    {
+        get
+        {
+            var s = _store.Value;
+            // Copilot-Preise für das Nachrechnen alter Läufe (Activity, Board, Session) aktuell halten
+            AgentRun.CopilotPrices = (s.Ai.CopilotPremiumRequestUsd, s.Ai.CopilotAiCreditUsd);
+            return s;
+        }
+    }
 
     public async Task SaveAsync()
     {
+        AgentRun.CopilotPrices = (_store.Value.Ai.CopilotPremiumRequestUsd, _store.Value.Ai.CopilotAiCreditUsd);
         await _store.SaveAsync();
         Changed?.Invoke();
     }
