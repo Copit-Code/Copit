@@ -530,13 +530,23 @@ public partial class TimeBookingService(ConnectionHub hub, DataService data, Set
     }
 
     /// <summary>Legt im Epic einen Task an – mit Account – und merkt sich den Account für das neue Ticket.</summary>
-    public async Task<JiraIssue> CreateTaskInEpicAsync(string epicKey, string summary, string description, double estimateHours, string? account, CancellationToken ct = default)
+    /// <param name="project">Projekt, zu dem der Task gehört (bei geteiltem Epic: Component/Label setzen und zuordnen).</param>
+    public async Task<JiraIssue> CreateTaskInEpicAsync(string epicKey, string summary, string description, double estimateHours, string? account, CancellationToken ct = default, CopitProject? project = null)
     {
         var jira = hub.RequireJira;
         epicKey = epicKey.Trim().ToUpperInvariant();
-        var type = data.Projects.Value.Projects.FirstOrDefault(p => string.Equals(p.EpicKey, epicKey, StringComparison.OrdinalIgnoreCase))?.IssueType;
+        if (project != null && !string.Equals(project.EpicKey.Trim(), epicKey, StringComparison.OrdinalIgnoreCase)) project = null;
+        project ??= data.Projects.Value.Projects.FirstOrDefault(p => string.Equals(p.EpicKey, epicKey, StringComparison.OrdinalIgnoreCase));
+        var type = project?.IssueType;
         if (string.IsNullOrWhiteSpace(type)) type = string.IsNullOrWhiteSpace(settings.Settings.Jira.DefaultIssueType) ? "Task" : settings.Settings.Jira.DefaultIssueType;
-        var key = await jira.CreateIssueAsync(ProjectKey(epicKey), summary.Trim(), description, type, estimateHours, epicKey, ct, account);
+        var extra = new Dictionary<string, System.Text.Json.Nodes.JsonNode?>();
+        if (project != null) TicketScope.AddCreateFields(project, extra);
+        var key = await jira.CreateIssueAsync(ProjectKey(epicKey), summary.Trim(), description, type, estimateHours, epicKey, ct, account, extra);
+        if (project != null && TicketScope.NeedsScoping(project, TicketScope.Siblings(data.Projects.Value.Projects, project)))
+        {
+            data.Projects.Value.TicketAssignments[key.ToUpperInvariant()] = project.Id;
+            await data.Projects.SaveAsync();
+        }
         if (!string.IsNullOrWhiteSpace(account)) await RememberAccountAsync(key, account, false);
         return await jira.GetIssueAsync(key, ct) ?? new JiraIssue { Key = key, Summary = summary, Account = account };
     }

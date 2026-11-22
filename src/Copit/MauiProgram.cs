@@ -89,6 +89,7 @@ public static class MauiProgram
         s.AddSingleton<ExtensionService>();
         s.AddSingleton<DocsService>();
         s.AddSingleton<TicketChangesService>();
+        s.AddSingleton<TicketScopeService>();
         s.AddSingleton<McpAnalysisService>();
         s.AddSingleton<ActivityService>(_ => new ActivityService());
         // App

@@ -47,6 +47,8 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     private readonly GitService _git;
     private readonly SettingsService _settings;
     private List<JiraIssue> _all = [];
+    private readonly TicketScopeService _scope;
+    private ScopedTickets _scoped = ScopedTickets.All;
     private string? _myName;
     private static readonly CultureInfo De = CultureInfo.GetCultureInfo("de-DE");
 
@@ -76,6 +78,12 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     [ObservableProperty] public partial string Error { get; set; } = "";
     [ObservableProperty] public partial string Filter { get; set; } = "";
     [ObservableProperty] public partial bool OnlyMine { get; set; }
+    /// <summary>Nicht zugeordnete Tickets (geteiltes Epic) anzeigen.</summary>
+    [ObservableProperty] public partial bool ShowUnassigned { get; set; } = true;
+    /// <summary>Kurzinfo zur Abgrenzung, z. B. „12 eigene · 3 nicht zugeordnet · 9 bei ProductionCollector“.</summary>
+    [ObservableProperty] public partial string ScopeInfo { get; set; } = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(ShowScopeChip))] public partial bool HasScope { get; set; }
+    public bool ShowScopeChip => HasScope && IsTickets;
     [ObservableProperty] public partial string Tab { get; set; } = "tickets";
     [ObservableProperty] public partial string StatsTickets { get; set; } = "";
     [ObservableProperty] public partial string StatsHours { get; set; } = "";
@@ -117,16 +125,18 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     public bool HasPipeline => PipelineStatus != null;
 
     public ProjectDetailViewModel(DataService data, ConnectionHub hub, NavigationService nav, SessionStore store, SessionManager sessions,
-        AssistService assist, ToastService toast, GitService git, SettingsService settings, TimeBookingService time)
+        AssistService assist, ToastService toast, GitService git, SettingsService settings, TimeBookingService time, TicketScopeService scope)
     {
-        _time = time;
+        _time = time; _scope = scope;
         _data = data; _hub = hub; _nav = nav; _store = store; _sessions = sessions; _assist = assist; _toast = toast; _git = git; _settings = settings;
         Editor = new ProjectEditor(git, hub);
         Editor.Saved += async p =>
         {
             var e = _data.Project(p.Id);
             if (e == null) return;
-            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions; e.IssueType = p.IssueType; ProjectFolders.Move(data.Projects.Value, e, p.Group);
+            e.Name = p.Name; e.EpicKey = p.EpicKey; e.SourceFolder = p.SourceFolder; e.GitLabProject = p.GitLabProject; e.Color = p.Color; e.Instructions = p.Instructions; e.IssueType = p.IssueType;
+            e.TicketComponent = p.TicketComponent; e.TicketLabel = p.TicketLabel; e.TicketJql = p.TicketJql;
+            ProjectFolders.Move(data.Projects.Value, e, p.Group);
             await _data.Projects.SaveAsync();
             _data.RaiseProjectsChanged();
             Project = null; Project = e;
@@ -135,9 +145,10 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         TicketProvider = settings.Settings.Ai.DefaultProvider;
     }
 
-    partial void OnTabChanged(string value) { OnPropertyChanged(nameof(IsTickets)); OnPropertyChanged(nameof(IsNotes)); OnPropertyChanged(nameof(IsSessions)); }
+    partial void OnTabChanged(string value) { OnPropertyChanged(nameof(ShowScopeChip)); OnPropertyChanged(nameof(IsTickets)); OnPropertyChanged(nameof(IsNotes)); OnPropertyChanged(nameof(IsSessions)); }
     partial void OnFilterChanged(string value) => ApplyFilter();
     partial void OnOnlyMineChanged(bool value) => ApplyFilter();
+    partial void OnShowUnassignedChanged(bool value) => ApplyFilter();
     partial void OnNoteSearchChanged(string value) => LoadNotes();
     partial void OnTicketSummaryChanged(string value) => OnPropertyChanged(nameof(HasDraft));
     partial void OnTicketProviderChanged(AiProvider value) { OnPropertyChanged(nameof(TicketIsClaude)); OnPropertyChanged(nameof(TicketIsCopilot)); }
@@ -174,12 +185,13 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
             _myName ??= (await jira.GetMyselfAsync()).DisplayName;
             Epic = await jira.GetIssueAsync(Project.EpicKey);
             _all = await jira.GetEpicIssuesAsync(Project.EpicKey);
-            ApplyFilter();
-            var done = _all.Count(i => i.Bucket == IssueBucket.Done);
-            DoneFraction = _all.Count > 0 ? done / (double)_all.Count : 0;
-            StatsTickets = $"{done} von {_all.Count} Tickets erledigt";
-            var est = _all.Sum(i => i.OriginalEstimateSeconds) / 3600.0;
-            var spent = _all.Sum(i => i.TimeSpentSeconds) / 3600.0;
+            await RescopeAsync();
+            var own = _all.Where(i => _scoped.Of(i.Key) != TicketOwner.Other).ToList();
+            var done = own.Count(i => i.Bucket == IssueBucket.Done);
+            DoneFraction = own.Count > 0 ? done / (double)own.Count : 0;
+            StatsTickets = $"{done} von {own.Count} Tickets erledigt";
+            var est = own.Sum(i => i.OriginalEstimateSeconds) / 3600.0;
+            var spent = own.Sum(i => i.TimeSpentSeconds) / 3600.0;
             StatsHours = est > 0 ? $"{spent:0.#}h gebucht von {est:0.#}h geschätzt" : $"{spent:0.#}h gebucht";
             HoursFraction = est > 0 ? Math.Min(1, spent / est) : 0;
         }
@@ -201,12 +213,33 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
         catch { }
     }
 
+    /// <summary>Abgrenzung bei geteiltem Epic neu berechnen (Jira-Filter, Code im Repo, manuelle Zuordnung).</summary>
+    private async Task RescopeAsync()
+    {
+        if (Project == null) return;
+        try { _scoped = await _scope.ScopeAsync(Project, _all); }
+        catch (Exception e) { _scoped = ScopedTickets.All; _toast.Show("Ticket-Zuordnung nicht möglich", e.Message, NoticeLevel.Warning); }
+        foreach (var w in _scoped.Warnings) _toast.Show("Ticket-Filter", w, NoticeLevel.Warning);
+        HasScope = _scoped.Active;
+        foreach (var i in _all) i.ScopeNote = _scoped.Of(i.Key) == TicketOwner.Unassigned ? "nicht zugeordnet – tippen zum Zuordnen" : "";
+        if (_scoped.Active)
+        {
+            int own = _all.Count(i => _scoped.Of(i.Key) == TicketOwner.Own), open = _all.Count(i => _scoped.Of(i.Key) == TicketOwner.Unassigned);
+            int other = _all.Count - own - open;
+            var siblings = TicketScope.Siblings(_data.Projects.Value.Projects, Project).Where(s => s.Id != Project.Id).Select(s => s.Name).ToList();
+            ScopeInfo = $"{own} eigene · {open} nicht zugeordnet" + (other > 0 ? $" · {other} bei {(siblings.Count == 1 ? siblings[0] : "anderen Projekten")}" : "");
+        }
+        else ScopeInfo = "";
+        ApplyFilter();
+    }
+
     private void ApplyFilter()
     {
         foreach (var c in Columns) c.Issues.Clear();
         var f = Filter?.Trim() ?? "";
         foreach (var i in _all.OrderByDescending(i => i.Updated))
         {
+            if (!_scoped.Visible(i.Key, ShowUnassigned)) continue;
             if (f.Length > 0 && !i.Key.Contains(f, StringComparison.OrdinalIgnoreCase) && !i.Summary.Contains(f, StringComparison.OrdinalIgnoreCase) && !i.Assignee.Contains(f, StringComparison.OrdinalIgnoreCase)) continue;
             if (OnlyMine && i.Assignee != _myName) continue;
             Columns[(int)i.Bucket].Issues.Add(i);
@@ -215,6 +248,27 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
 
     [RelayCommand] private void SetTab(string t) => Tab = t;
     [RelayCommand] private void ToggleMine() => OnlyMine = !OnlyMine;
+    [RelayCommand] private void ToggleUnassigned() => ShowUnassigned = !ShowUnassigned;
+
+    /// <summary>Ticket manuell einem Projekt mit demselben Epic zuordnen.</summary>
+    private async Task AssignIssueAsync(JiraIssue i)
+    {
+        if (Project == null) return;
+        var siblings = TicketScope.Siblings(_data.Projects.Value.Projects, Project);
+        var options = siblings.Select(s => s.Id == Project.Id ? $"{s.Name} (dieses Projekt)" : s.Name).ToList();
+        var hasManual = _data.Projects.Value.TicketAssignments.ContainsKey(i.Key.ToUpperInvariant());
+        if (hasManual) options.Add("Zuordnung entfernen (automatisch)");
+        var pick = await Dialogs.Choose($"{i.Key} zuordnen", [.. options]);
+        if (pick == null || pick == "Abbrechen") return;
+        if (pick.StartsWith("Zuordnung entfernen")) await _scope.AssignAsync(i.Key, null);
+        else
+        {
+            var target = siblings[options.IndexOf(pick)];
+            await _scope.AssignAsync(i.Key, target.Id);
+            _toast.Success("Ticket zugeordnet", $"{i.Key} → {target.Name}");
+        }
+        await RescopeAsync();
+    }
     [RelayCommand] private Task OpenIssueAsync(JiraIssue i) => Dialogs.OpenUrl(i.Url);
     [RelayCommand] private Task OpenEpicAsync() => Dialogs.OpenUrl(Project == null ? null : _hub.Jira?.IssueUrl(Project.EpicKey));
     [RelayCommand] private void OpenFolder() { if (Project != null) Dialogs.OpenFolder(Project.SourceFolder); }
@@ -244,8 +298,11 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
     private async Task WorkOnIssueAsync(JiraIssue i)
     {
         if (Project == null) return;
-        var choice = await Dialogs.Choose($"{i.Key}: {i.Summary}", "Session starten", "Branch anlegen + Session starten", "Code-Änderungen ansehen", "In Jira öffnen");
+        var choices = new List<string> { "Session starten", "Branch anlegen + Session starten", "Code-Änderungen ansehen", "In Jira öffnen" };
+        if (TicketScope.Siblings(_data.Projects.Value.Projects, Project).Count > 1) choices.Add("Projekt zuordnen…");
+        var choice = await Dialogs.Choose($"{i.Key}: {i.Summary}", [.. choices]);
         if (choice == null || choice == "Abbrechen") return;
+        if (choice.StartsWith("Projekt zuordnen")) { await AssignIssueAsync(i); return; }
         if (choice.StartsWith("In Jira")) { await Dialogs.OpenUrl(i.Url); return; }
         if (choice.StartsWith("Code-Änderungen")) { _nav.Go(Routes.Changes, new Copit.Views.ChangesRequest(Project.Id, i.Key)); return; }
         var desc = string.IsNullOrWhiteSpace(i.Description) ? "" : $"\n\nBeschreibung aus Jira:\n{(i.Description.Length > 4000 ? i.Description[..4000] : i.Description)}";
@@ -516,7 +573,9 @@ public partial class ProjectDetailViewModel : ObservableObject, IActivatable
                 if (node == null && f.Field.Required) { _toast.Show("Pflichtfeld fehlt", $"Bitte „{f.Field.Name}“ ausfüllen – Jira verlangt es für diesen Typ.", NoticeLevel.Warning); return; }
                 if (node != null) extra[f.Field.Id] = node;
             }
+            TicketScope.AddCreateFields(Project, extra);   // Component/Label des Projekts → Ticket landet im Projekt-Filter
             var key = await _hub.RequireJira.CreateIssueAsync(Project.JiraProjectKey, TicketSummary.Trim(), TicketDescription, TicketType, est, Project.EpicKey, default, account, extra);
+            if (TicketScope.NeedsScoping(Project, TicketScope.Siblings(_data.Projects.Value.Projects, Project))) await _scope.AssignAsync(key, Project.Id);
             foreach (var f in TicketFields.Where(f => f.Value.Length > 0)) Project.FieldDefaults[f.Field.Id] = f.Value;   // pro Projekt merken
             Project.IssueType = TicketType;   // pro Projekt merken
             await _data.Projects.SaveAsync();

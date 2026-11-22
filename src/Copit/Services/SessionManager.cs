@@ -532,6 +532,9 @@ public partial class SessionHost : ObservableObject
         if (r.CostUsd > 0) parts.Add($"${r.CostUsd:0.000}");
         else if (Provider == AiProvider.Copilot && r.UsageReported && (r.PremiumRequests > 0 || r.AiCredits > 0)) parts.Add("Preis in Einstellungen → KI setzen");
         if (Provider == AiProvider.Copilot && !r.UsageReported) parts.Add("keine Nutzungsdaten von Copilot erhalten");
+        // Kein Preis erkennbar: unbekannte Zeilen der Copilot-Zusammenfassung zeigen, damit man sieht, was die CLI meldet
+        if (Provider == AiProvider.Copilot && r.PremiumRequests <= 0 && r.AiCredits <= 0 && !string.IsNullOrWhiteSpace(r.UsageSummary))
+            parts.Add($"Copilot meldet: {r.UsageSummary}");
         return parts.Count == 0 ? "" : " · " + string.Join(" · ", parts);
     }
 
@@ -650,7 +653,7 @@ public partial class SessionHost : ObservableObject
     public string ContextText => $"{Fmt(Session.ContextTokens)} / {Fmt(ContextWindow)}";
     public string ContextPercent => $"{ContextFraction * 100:0}%";
     public Color ContextColor => (Color)Application.Current!.Resources[ContextFraction > 0.85 ? "Red" : ContextFraction > 0.6 ? "Amber" : "Cyan"];
-    public string CostText => Session.TotalCostUsd > 0 ? $"${Session.TotalCostUsd:0.00}" : "";
+    public string CostText => Session.Cost > 0 ? $"${Session.Cost:0.00}" : "";
     public bool HasCliSession => !string.IsNullOrEmpty(Session.CliSessionId);
 
     private static string Fmt(long n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.#}M" : n >= 1000 ? $"{n / 1000.0:0.#}k" : n.ToString();
@@ -986,6 +989,7 @@ public partial class SessionHost : ObservableObject
                     Session.OutputTokens += usage.Output;
                 }
                 run.PremiumRequests = r.PremiumRequests;
+                run.AiCredits = r.AiCredits;
                 if (Provider == AiProvider.Copilot)
                 {
                     // Kontext: echte Eingabe-Tokens aus der Copilot-Zusammenfassung, sonst grob schätzen

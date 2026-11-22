@@ -56,6 +56,13 @@ public partial class ProjectEditor : ObservableObject
     /// <summary>Ticket-Typ für neue Tickets (Name oder ID, leer = Standard).</summary>
     [ObservableProperty] public partial string IssueType { get; set; } = "";
     public List<string> KnownGroups { get; set; } = [];
+    /// <summary>Jira-Component/Label/JQL zur Abgrenzung bei geteiltem Epic.</summary>
+    [ObservableProperty] public partial string TicketComponent { get; set; } = "";
+    [ObservableProperty] public partial string TicketLabel { get; set; } = "";
+    [ObservableProperty] public partial string TicketJql { get; set; } = "";
+    public string TicketFilterHint =>
+        "Nur Tickets mit dieser Component bzw. diesem Label werden im Projekt angezeigt; neue Tickets bekommen sie automatisch. " +
+        "Ohne Filter ordnet Copit Tickets über Commits und Branches im Repo zu – oder per Klick aufs Ticket → „Projekt zuordnen…“.";
     [ObservableProperty] public partial string EpicInfo { get; set; } = "";
     [ObservableProperty] public partial bool EpicOk { get; set; }
     [ObservableProperty] public partial string Error { get; set; } = "";
@@ -71,6 +78,7 @@ public partial class ProjectEditor : ObservableObject
         EditingId = p?.Id;
         Name = p?.Name ?? ""; Epic = p?.EpicKey ?? ""; Folder = p?.SourceFolder ?? ""; GitLab = p?.GitLabProject ?? "";
         Color = p?.Color ?? Palette[Random.Shared.Next(Palette.Length)]; Instructions = p?.Instructions ?? ""; Group = p?.Group ?? Group; IssueType = p?.IssueType ?? "";
+        TicketComponent = p?.TicketComponent ?? ""; TicketLabel = p?.TicketLabel ?? ""; TicketJql = p?.TicketJql ?? "";
         EpicInfo = ""; EpicOk = false; Error = "";
         IsOpen = true;
         if (!string.IsNullOrEmpty(Epic)) _ = CheckEpicAsync();
@@ -130,7 +138,8 @@ public partial class ProjectEditor : ObservableObject
         {
             Id = EditingId ?? Guid.NewGuid().ToString("N"),
             Name = Name.Trim(), EpicKey = Epic.Trim().ToUpperInvariant(), SourceFolder = Folder.Trim(),
-            GitLabProject = GitLab.Trim(), Color = Color, Instructions = Instructions, Group = ProjectFolders.Normalize(Group), IssueType = IssueType.Trim()
+            GitLabProject = GitLab.Trim(), Color = Color, Instructions = Instructions, Group = ProjectFolders.Normalize(Group), IssueType = IssueType.Trim(),
+            TicketComponent = TicketComponent.Trim(), TicketLabel = TicketLabel.Trim(), TicketJql = TicketJql.Trim(),
         };
         IsOpen = false;
         if (Saved != null) await Saved(p);
@@ -151,8 +160,11 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
     public ProjectEditor Editor { get; }
     public bool IsEmpty => _data.Projects.Value.Projects.Count == 0 && _data.Projects.Value.Folders.Count == 0;
 
-    public ProjectsViewModel(DataService data, GitService git, ConnectionHub hub, NavigationService nav, SessionStore sessions, ToastService toast)
+    private readonly TicketScopeService _scope;
+
+    public ProjectsViewModel(DataService data, GitService git, ConnectionHub hub, NavigationService nav, SessionStore sessions, ToastService toast, TicketScopeService scope)
     {
+        _scope = scope;
         _data = data; _git = git; _hub = hub; _nav = nav; _sessions = sessions; _toast = toast;
         Editor = new ProjectEditor(git, hub);
         Editor.Saved += SaveProjectAsync;
@@ -167,6 +179,7 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
         {
             existing.Name = p.Name; existing.EpicKey = p.EpicKey; existing.SourceFolder = p.SourceFolder;
             existing.GitLabProject = p.GitLabProject; existing.Color = p.Color; existing.Instructions = p.Instructions; existing.IssueType = p.IssueType;
+            existing.TicketComponent = p.TicketComponent; existing.TicketLabel = p.TicketLabel; existing.TicketJql = p.TicketJql;
             ProjectFolders.Move(_data.Projects.Value, existing, p.Group);
         }
         else { list.Add(p); ProjectFolders.Add(_data.Projects.Value, p.Group); }
@@ -290,6 +303,8 @@ public partial class ProjectsViewModel : ObservableObject, IActivatable
                 var epic = await _hub.Jira.GetIssueAsync(p.EpicKey);
                 card.EpicSummary = epic?.Summary ?? "";
                 var issues = await _hub.Jira.GetEpicIssuesAsync(p.EpicKey);
+                var scoped = await _scope.ScopeAsync(p, issues);   // geteiltes Epic: nur eigene + nicht zugeordnete zählen
+                issues = issues.Where(i => scoped.Visible(i.Key)).ToList();
                 if (issues.Count > 0)
                 {
                     var done = issues.Count(i => i.Bucket == IssueBucket.Done);

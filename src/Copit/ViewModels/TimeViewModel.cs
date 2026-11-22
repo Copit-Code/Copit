@@ -711,8 +711,9 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     private async Task CreateTaskAsync(SuggestionVM s)
     {
         if (_hub.Jira == null) { _toast.Show("Jira nicht konfiguriert", "", NoticeLevel.Warning); return; }
-        var guess = _data.Projects.Value.Projects.FirstOrDefault(p => !string.IsNullOrEmpty(s.Model.Repo) && !string.IsNullOrEmpty(p.EpicKey)
-                        && (p.SourceFolder.Contains(s.Model.Repo!, StringComparison.OrdinalIgnoreCase) || s.Model.Repo!.Contains(System.IO.Path.GetFileName(p.SourceFolder.TrimEnd('\\')), StringComparison.OrdinalIgnoreCase)))?.EpicKey
+        var guessProject = _data.Projects.Value.Projects.FirstOrDefault(p => !string.IsNullOrEmpty(s.Model.Repo) && !string.IsNullOrEmpty(p.EpicKey) && !string.IsNullOrEmpty(p.SourceFolder)
+                        && (p.SourceFolder.Contains(s.Model.Repo!, StringComparison.OrdinalIgnoreCase) || s.Model.Repo!.Contains(System.IO.Path.GetFileName(p.SourceFolder.TrimEnd('\\')), StringComparison.OrdinalIgnoreCase)));
+        var guess = guessProject?.EpicKey
                     ?? _data.Projects.Value.Projects.FirstOrDefault(p => !string.IsNullOrEmpty(p.EpicKey))?.EpicKey ?? "";
         var epic = await Dialogs.Prompt("Task im Epic anlegen", "Epic-Key (z. B. WEI-1 für das Weiterentwicklungsprojekt)", guess);
         if (string.IsNullOrWhiteSpace(epic)) return;
@@ -731,7 +732,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         if (!await Dialogs.Confirm("Task anlegen?", $"Task \"{title}\" im Epic {epic}{(account != null ? $"\nAccount: {account} ({source})" : "\nohne Account")}\nGeschätzt: {s.Model.Hours:0.##} h", "Anlegen")) return;
         try
         {
-            var issue = await _time.CreateTaskInEpicAsync(epic, title, s.Comment, s.Model.Hours, account);
+            var issue = await _time.CreateTaskInEpicAsync(epic, title, s.Comment, s.Model.Hours, account, default, guessProject);
             await _time.CorrectTicketAsync(s.Model, issue.Key);
             s.Model.IssueSummary = issue.Summary;
             s.Model.Account = issue.Account ?? account;

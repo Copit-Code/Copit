@@ -27,14 +27,36 @@ public sealed partial class CopilotUsageParser
     public long LinesAdded { get; private set; }
     public long LinesRemoved { get; private set; }
     public bool Found => _hasTokens || PremiumRequests > 0 || AiCredits > 0;
+    /// <summary>Zeilen der Zusammenfassung (stderr), die Copit nicht zuordnen konnte – zur Anzeige, damit neue CLI-Formate sichtbar werden.</summary>
+    public List<string> UnknownSummaryLines { get; } = [];
+    private bool _inSummary;
     public TokenUsage? Usage => _hasTokens ? new TokenUsage(_in, _out, _cacheRead, _cacheWrite) : null;
 
     /// <summary>Verarbeitet eine Ausgabezeile. true = Zeile gehört zur Zusammenfassung.</summary>
-    public bool Feed(string rawLine)
+    /// <param name="fromStderr">Zeile kommt von stderr (dort steht die Zusammenfassung) – dann werden Credits/Requests tolerant erkannt.</param>
+    public bool Feed(string rawLine, bool fromStderr = false)
     {
         var line = rawLine.Trim();
         if (line.Length == 0) return _inLegacySummary;
+        var hit = FeedCore(line);
+        if (hit) { _inSummary = true; return true; }
+        if (!fromStderr) return false;
 
+        // Tolerant (nur stderr): „AI Credits used: 0.12“, „Credits 1.5“, „Requests 0.33 AI credits“, „Usage 2 premium requests“ …
+        var isBalance = BalanceRx().IsMatch(line);   // „… credits remaining/left“ ist Guthaben, kein Verbrauch
+        if (!isBalance && line.Contains("credit", StringComparison.OrdinalIgnoreCase) &&
+            (LooseCreditsAfterRx().Match(line) is { Success: true } ca ? ca : LooseCreditsBeforeRx().Match(line)) is { Success: true } lc)
+        { AiCredits += Dbl(lc.Groups["n"].Value.TrimStart('<').Trim()); _inSummary = true; return true; }
+        if (!isBalance && line.Contains("premium", StringComparison.OrdinalIgnoreCase) && LoosePremiumRx().Match(line) is { Success: true } lp)
+        { PremiumRequests += Dbl(lp.Groups["n"].Value); _inSummary = true; return true; }
+
+        // Unbekannte Zeile im Stil der Zusammenfassung („Label   Wert“) merken
+        if (_inSummary && SummaryLineRx().IsMatch(line)) { if (UnknownSummaryLines.Count < 8) UnknownSummaryLines.Add(SpacesRx().Replace(line, " ")); return true; }
+        return false;
+    }
+
+    private bool FeedCore(string line)
+    {
         // ---- aktuelles Format
         if (TokensRx().Match(line) is { Success: true } t)
         {
@@ -127,6 +149,18 @@ public sealed partial class CopilotUsageParser
     private static partial Regex RequestsRx();
     [GeneratedRegex(@"^AI Credits\s+(<?[\d.,]+)\s*\(", RegexOptions.IgnoreCase)]
     private static partial Regex CreditsRx();
+    [GeneratedRegex(@"(?<n><?\s*\d[\d.,]*)\s*(?:AI\s*)?credits?\b", RegexOptions.IgnoreCase)]
+    private static partial Regex LooseCreditsAfterRx();
+    [GeneratedRegex(@"credits?(?:\s+used)?\s*[:=]?\s*(?<n><?\s*\d[\d.,]*)", RegexOptions.IgnoreCase)]
+    private static partial Regex LooseCreditsBeforeRx();
+    [GeneratedRegex(@"(?<n>\d[\d.,]*)\s*premium", RegexOptions.IgnoreCase)]
+    private static partial Regex LoosePremiumRx();
+    [GeneratedRegex(@"^[A-Za-z][A-Za-z ]{1,30}?(\s{2,}|:\s*)\S")]
+    private static partial Regex SummaryLineRx();
+    [GeneratedRegex(@"\b(remaining|left|balance|quota|limit|resets?)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex BalanceRx();
+    [GeneratedRegex(@"\s{2,}")]
+    private static partial Regex SpacesRx();
     [GeneratedRegex(@"^Changes\s+\+(\d+)\s+-(\d+)$", RegexOptions.IgnoreCase)]
     private static partial Regex ChangesRx();
     [GeneratedRegex(@"^Duration\s+(\d+h\s*)?(\d+m\s*)?\d+s$", RegexOptions.IgnoreCase)]

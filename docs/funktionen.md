@@ -98,6 +98,7 @@ Copit zeigt zu jedem Agent, wie weit das Ticket geliefert ist: **Commit → Push
   - Ordner lassen sich umbenennen, verschieben und löschen. Beim Löschen rücken die Projekte eine Ebene nach oben.
   - Projekte verschiebst du per Drag & Drop, über „In Ordner…“ oder im Editor.
   - Die Seitenleiste ist gruppiert, sobald Ordner existieren.
+- **Mehrere Projekte in einem Epic:** Im Projekt-Editor unter „Ticket-Filter“ eine Jira-Component, ein Label oder JQL eintragen. Das Projekt zeigt dann nur passende Tickets, neue Tickets bekommen Component und Label automatisch. Ohne Filter ordnet Copit über Commits und Branches im Repo zu, manuell über Ticket → „Projekt zuordnen…“. Nicht zugeordnete Tickets sind markiert und lassen sich ausblenden.
 - **Projektseite:**
   - Ticket-Board des Epics, Notizen und Sessions.
   - Neues Ticket mit KI-Ausarbeitung und Schätzung.

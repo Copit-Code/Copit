@@ -237,7 +237,7 @@ public class CopilotCliRunner(SettingsService settings, SandboxService? sandbox 
                            line =>
                            {
                                var clean = GitLabClient.StripAnsi(line);
-                               lock (usage) if (usage.Feed(clean)) return null;
+                               lock (usage) if (usage.Feed(clean, fromStderr: true)) return null;
                                return clean.Length > 0 ? new AgentStatusLine(clean) : null;
                            },
                            (res, err) =>
@@ -246,13 +246,13 @@ public class CopilotCliRunner(SettingsService settings, SandboxService? sandbox 
                                lock (full) text = full.ToString().Trim();
                                var isError = !res.Ok;
                                if (isError && text.Length == 0) text = err.ToString().Trim();
-                               TokenUsage? tokens; double premium, credits; bool found;
-                               lock (usage) { tokens = usage.Usage; premium = usage.PremiumRequests; credits = usage.AiCredits; found = usage.Found; }
+                               TokenUsage? tokens; double premium, credits; bool found; string summary;
+                               lock (usage) { tokens = usage.Usage; premium = usage.PremiumRequests; credits = usage.AiCredits; found = usage.Found; summary = string.Join(" | ", usage.UnknownSummaryLines); }
                                // Kosten = Premium Requests × Preis bzw. AI Credits × Preis (Copilot meldet keine Dollar-Beträge)
                                var ai = Settings.Settings.Ai;
                                var cost = premium * Math.Max(0, ai.CopilotPremiumRequestUsd) + credits * Math.Max(0, ai.CopilotAiCreditUsd);
                                return new AgentResult(isError, text, cost, (long)(DateTime.Now - started).TotalMilliseconds, 1, [], null,
-                                   isError ? "error" : "success", tokens, premium, credits, found);
+                                   isError ? "error" : "success", tokens, premium, credits, found, summary);
                            }, ct))
             yield return e;
     }

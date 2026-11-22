@@ -320,7 +320,10 @@ public partial class DocsService(DataService data, ConnectionHub hub, GitService
                 if (!string.IsNullOrWhiteSpace(p.EpicKey))
                 {
                     epic = await jira.GetIssueAsync(p.EpicKey, ct);
-                    foreach (var i in await jira.GetEpicIssuesAsync(p.EpicKey, ct)) { issues[i.Key] = i; keys.Add(i.Key); }
+                    var epicIssues = await jira.GetEpicIssuesAsync(p.EpicKey, ct);
+                    // Geteiltes Epic: nur Tickets dieses Projekts (und nicht zugeordnete) in die Doku
+                    var scoped = await new TicketScopeService(hub, data, sessions, new TicketChangesService(git)).ScopeAsync(p, epicIssues, ct);
+                    foreach (var i in epicIssues.Where(i => scoped.Visible(i.Key))) { issues[i.Key] = i; keys.Add(i.Key); }
                 }
                 var missing = keys.Where(k => !issues.ContainsKey(k)).ToList();
                 for (int i = 0; i < missing.Count; i += 80)
@@ -419,7 +422,7 @@ public partial class DocsService(DataService data, ConnectionHub hub, GitService
                     foreach (var a in ta.OrderByDescending(a => a.CreatedAt))
                     {
                         sb.AppendLine($"### {Esc(a.Title)} ({a.CreatedAt:dd.MM.yyyy})\n");
-                        sb.AppendLine($"{a.Provider} · Agent-Zeit {TimeSpan.FromMilliseconds(a.AgentMs):h\\:mm} h · {(a.TotalCostUsd > 0 ? $"${a.TotalCostUsd:0.00} · " : "")}+{a.LinesAdded}/−{a.LinesRemoved} Zeilen in {a.FilesChanged} Dateien · Status {AgentStatusInfo.Title(a.Status)}\n");
+                        sb.AppendLine($"{a.Provider} · Agent-Zeit {TimeSpan.FromMilliseconds(a.AgentMs):h\\:mm} h · {(a.Cost > 0 ? $"${a.Cost:0.00} · " : "")}+{a.LinesAdded}/−{a.LinesRemoved} Zeilen in {a.FilesChanged} Dateien · Status {AgentStatusInfo.Title(a.Status)}\n");
                         if (!string.IsNullOrWhiteSpace(a.Summary)) sb.AppendLine("> " + Linkify(Short(a.Summary!, 600), rel, folder, known).Replace("\n", "\n> ") + "\n");
                     }
                 }
