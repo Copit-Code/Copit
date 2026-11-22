@@ -320,7 +320,10 @@ public partial class DocsService(DataService data, ConnectionHub hub, GitService
                 if (!string.IsNullOrWhiteSpace(p.EpicKey))
                 {
                     epic = await jira.GetIssueAsync(p.EpicKey, ct);
-                    foreach (var i in await jira.GetEpicIssuesAsync(p.EpicKey, ct)) { issues[i.Key] = i; keys.Add(i.Key); }
+                    var epicIssues = await jira.GetEpicIssuesAsync(p.EpicKey, ct);
+                    // Geteiltes Epic: nur Tickets dieses Projekts (und nicht zugeordnete) in die Doku
+                    var scoped = await new TicketScopeService(hub, data, sessions, new TicketChangesService(git)).ScopeAsync(p, epicIssues, ct);
+                    foreach (var i in epicIssues.Where(i => scoped.Visible(i.Key))) { issues[i.Key] = i; keys.Add(i.Key); }
                 }
                 var missing = keys.Where(k => !issues.ContainsKey(k)).ToList();
                 for (int i = 0; i < missing.Count; i += 80)

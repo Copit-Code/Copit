@@ -9,6 +9,8 @@ public class ProjectsData
     public string? ActiveProjectId { get; set; }
     /// <summary>Projektordner (auch leere) mit Auf-/Zuklapp-Zustand.</summary>
     public List<ProjectFolder> Folders { get; set; } = [];
+    /// <summary>Manuelle Ticket-Zuordnung bei geteiltem Epic: Ticket-Key → Projekt-ID.</summary>
+    public Dictionary<string, string> TicketAssignments { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 public class NotesData { public List<ProjectNote> Notes { get; set; } = []; }
 public class DaysData { public Dictionary<string, DayEntry> Days { get; set; } = []; }

@@ -21,6 +21,14 @@ public class CopitProject
     /// <summary>Ordner in der Projektliste ("" = ohne Ordner), Unterordner mit '/', z. B. "Kunde A/Backend".</summary>
     public string Group { get; set; } = "";
 
+    // ---- Abgrenzung, wenn sich mehrere Projekte ein Epic teilen
+    /// <summary>Jira-Component dieses Projekts: filtert die Tickets und wird bei neuen Tickets gesetzt.</summary>
+    public string TicketComponent { get; set; } = "";
+    /// <summary>Jira-Label dieses Projekts: filtert die Tickets und wird bei neuen Tickets gesetzt.</summary>
+    public string TicketLabel { get; set; } = "";
+    /// <summary>Zusätzlicher JQL-Filter (fortgeschritten), z. B. <c>summary ~ "Collector"</c>.</summary>
+    public string TicketJql { get; set; } = "";
+
     public string JiraProjectKey => EpicKey.Contains('-') ? EpicKey[..EpicKey.LastIndexOf('-')] : EpicKey;
 }
 
@@ -39,6 +47,9 @@ public enum IssueBucket { Open, InProgress, Review, Done }
 public class JiraIssue
 {
     public string Key { get; set; } = "";
+    /// <summary>Hinweis zur Projekt-Zuordnung bei geteiltem Epic (z. B. „nicht zugeordnet“), nur zur Anzeige.</summary>
+    public string ScopeNote { get; set; } = "";
+    public bool HasScopeNote => ScopeNote.Length > 0;
     public string Summary { get; set; } = "";
     public string Status { get; set; } = "";
     public string StatusCategory { get; set; } = "";

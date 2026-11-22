@@ -36,6 +36,7 @@
                         </Label>
                     </Grid>
                     <Label Text="{Binding Status}" FontSize="10.5" TextColor="{StaticResource Muted}" />
+                    <Label Text="{Binding ScopeNote}" IsVisible="{Binding HasScopeNote}" FontSize="10.5" TextColor="{StaticResource Amber}" />
                 </VerticalStackLayout>
             </Border>
         </DataTemplate>
@@ -72,6 +73,8 @@
                     <VerticalStackLayout Spacing="6">
                         <Label Text="{Binding StatsTickets}" FontSize="12" TextColor="{StaticResource Text2}" />
                         <ProgressBar Progress="{Binding DoneFraction}" ProgressColor="{StaticResource Green}" />
+                        <Label Text="{Binding ScopeInfo}" IsVisible="{Binding HasScope}" FontSize="11" TextColor="{StaticResource Muted}"
+                               ToolTipProperties.Text="Mehrere Projekte teilen sich dieses Epic. Zuordnung: manuell › Jira-Filter (Component/Label/JQL) › Commits und Branches im Repo." />
                     </VerticalStackLayout>
                     <VerticalStackLayout Grid.Column="1" Spacing="6">
                         <Label Text="{Binding StatsHours}" FontSize="12" TextColor="{StaticResource Text2}" />
@@ -93,7 +96,7 @@
         </Border>
 
         <!-- ================= Tabs ================= -->
-        <Grid Grid.Row="1" Padding="28,10" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="4">
+        <Grid Grid.Row="1" Padding="28,10" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="4">
             <Button Text="Tickets" Style="{StaticResource Tab}" Command="{Binding SetTabCommand}" CommandParameter="tickets">
                 <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding IsTickets}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource Card}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
             </Button>
@@ -107,7 +110,11 @@
             <Button Grid.Column="5" Text="Nur meine" Style="{StaticResource Chip}" Command="{Binding ToggleMineCommand}" IsVisible="{Binding IsTickets}" Margin="8,0,0,0">
                 <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding OnlyMine}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AccentSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
             </Button>
-            <c:IconButton Icon="refresh" Grid.Column="6" Command="{Binding LoadCommand}" ToolTipProperties.Text="Neu laden" />
+            <Button Grid.Column="6" Text="Nicht zugeordnete" Style="{StaticResource Chip}" Command="{Binding ToggleUnassignedCommand}" Margin="8,0,0,0"
+                    IsVisible="{Binding ShowScopeChip}" ToolTipProperties.Text="{Binding ScopeInfo}">
+                <Button.Triggers><DataTrigger TargetType="Button" Binding="{Binding ShowUnassigned}" Value="True"><Setter Property="BackgroundColor" Value="{StaticResource AmberSoft}" /><Setter Property="TextColor" Value="{StaticResource Text}" /></DataTrigger></Button.Triggers>
+            </Button>
+            <c:IconButton Icon="refresh" Grid.Column="7" Command="{Binding LoadCommand}" ToolTipProperties.Text="Neu laden" />
         </Grid>
 
         <!-- ================= Tickets Board ================= -->

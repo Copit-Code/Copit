@@ -56,6 +56,16 @@
                 </VerticalStackLayout>
 
                 <VerticalStackLayout Spacing="4">
+                    <Label Text="TICKET-FILTER (WENN SICH MEHRERE PROJEKTE DAS EPIC TEILEN, OPTIONAL)" Style="{StaticResource Caption}" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Entry Text="{Binding TicketComponent}" Placeholder="Jira-Component, z. B. StationService" />
+                        <Entry Grid.Column="1" Text="{Binding TicketLabel}" Placeholder="Jira-Label, z. B. productioncollector" />
+                    </Grid>
+                    <Entry Text="{Binding TicketJql}" Placeholder="zusätzlich JQL (fortgeschritten), z. B. summary ~ &quot;Collector&quot;" />
+                    <Label Text="{Binding TicketFilterHint}" FontSize="11" TextColor="{StaticResource Muted}" LineBreakMode="WordWrap" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="4">
                     <Label Text="KI-ANWEISUNGEN FÜR DIESES PROJEKT (OPTIONAL)" Style="{StaticResource Caption}" />
                     <Editor Text="{Binding Instructions}" AutoSize="TextChanges" MinimumHeightRequest="60"
                             Placeholder="z.B. .NET 8, Clean Architecture, Tests mit xUnit, Commit-Messages auf Englisch" />

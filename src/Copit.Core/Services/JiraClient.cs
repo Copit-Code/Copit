@@ -118,14 +118,16 @@ public class JiraClient
         catch (ApiException e) when (e.StatusCode == 404) { return null; }
     }
 
-    public async Task<List<JiraIssue>> GetEpicIssuesAsync(string epicKey, CancellationToken ct = default)
+    /// <param name="filterJql">Optionaler Zusatzfilter (z. B. Component/Label eines Projekts), wird mit AND verknüpft.</param>
+    public async Task<List<JiraIssue>> GetEpicIssuesAsync(string epicKey, CancellationToken ct = default, string? filterJql = null)
     {
         var epic = $"\"{epicKey}\"";
+        var and = string.IsNullOrWhiteSpace(filterJql) ? "" : $" AND ({filterJql})";
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(_s.EpicLinkFieldId))
-            candidates.Add($"(cf[{_s.EpicLinkFieldId.Replace("customfield_", "")}] = {epic} OR parent = {epic}) ORDER BY updated DESC");
-        candidates.Add($"(\"Epic Link\" = {epic} OR parent = {epic}) ORDER BY updated DESC");
-        candidates.Add($"parent = {epic} ORDER BY updated DESC");
+            candidates.Add($"(cf[{_s.EpicLinkFieldId.Replace("customfield_", "")}] = {epic} OR parent = {epic}){and} ORDER BY updated DESC");
+        candidates.Add($"(\"Epic Link\" = {epic} OR parent = {epic}){and} ORDER BY updated DESC");
+        candidates.Add($"parent = {epic}{and} ORDER BY updated DESC");
 
         ApiException? last = null;
         foreach (var jql in candidates)
@@ -481,7 +483,7 @@ public class JiraClient
         foreach (var (k, v) in extraFields ?? new Dictionary<string, JsonNode?>()) fields[k] = v?.DeepClone();
 
         // Felder, die nicht auf der Anlege-Maske stehen, weglassen und erneut versuchen – danach nachtragen
-        var optional = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "description", "timetracking", "parent" };
+        var optional = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "description", "timetracking", "parent", "components", "labels" };
         if (epicField != null) optional.Add(epicField);
         var dropped = new Dictionary<string, JsonNode?>(StringComparer.OrdinalIgnoreCase);
         JsonNode? node = null;
@@ -517,6 +519,15 @@ public class JiraClient
                     throw new InvalidOperationException($"Jira lehnt das Ticket ab: {JiraErrorText(e.Message)}\nTyp-ID {typeId}; verfügbar in {projectKey}: {string.Join(", ", types.Select(t => $"{t.Name} ({t.Id})"))}");
                 }
                 var bad = UnsettableFields(e.Message).Where(f => optional.Contains(f) && fields.ContainsKey(f)).ToList();
+                // Ungültige Component/Label (z. B. Component gibt es im Projekt nicht) → ohne anlegen, Hinweis statt Abbruch
+                foreach (var f in new[] { "components", "labels" })
+                    if (!bad.Contains(f) && fields.ContainsKey(f) && e.Message.Contains($"\"{f}\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        fields.Remove(f);
+                        LastCreateNotes.Add($"{(f == "components" ? "Component" : "Label")} nicht gesetzt – Jira: {JiraErrorText(e.Message)}. Ticket ist in Copit dem Projekt zugeordnet.");
+                        bad.Add("__retry");
+                    }
+                if (bad.Remove("__retry") && bad.Count == 0) continue;
                 if (bad.Count == 0) throw new ApiException("Jira lehnt das Ticket ab: " + JiraErrorText(e.Message), 400);
                 foreach (var f in bad) { dropped[f] = fields[f]?.DeepClone(); fields.Remove(f); }
             }
@@ -717,6 +728,7 @@ public class JiraClient
                     catch { LastCreateNotes.Add("Beschreibung konnte nicht gesetzt werden"); }
                 }
                 else if (field == "timetracking") LastCreateNotes.Add($"Schätzung ({FormatEstimate(estimateHours)}) ist in Jira nicht erlaubt – nicht gesetzt");
+                else if (field is "components" or "labels") LastCreateNotes.Add($"{(field == "components" ? "Component" : "Label")} ist in Jira nicht setzbar – Ticket ist in Copit dem Projekt zugeordnet");
                 else LastCreateNotes.Add($"Epic {epicKey} konnte nicht verknüpft werden – bitte in Jira zuordnen");
             }
         }

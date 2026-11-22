@@ -150,6 +150,22 @@ public partial class TicketChangesService(GitService git)
             .OrderByDescending(x => x.Last)];
     }
 
+    private static readonly Dictionary<string, (DateTime At, HashSet<string> Keys)> _keyCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Alle Ticket-Keys, die im Repo vorkommen: Commit-Betreffs und Refs (alle Branches, auch remote) sowie Branch-Namen. 5 Minuten gecacht.</summary>
+    public async Task<HashSet<string>> RepoTicketKeysAsync(string repo, int days = 365, CancellationToken ct = default)
+    {
+        lock (_keyCache)
+            if (_keyCache.TryGetValue(repo, out var c) && DateTime.Now - c.At < TimeSpan.FromMinutes(5)) return [.. c.Keys];
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var log = await git.RunAsync(repo, ct, "log", "--all", $"--since={days}.days", "--pretty=format:%s %D", "-n", "20000");
+        foreach (Match m in KeyRx().Matches(log.StdOut.ToUpperInvariant())) keys.Add(m.Value);
+        var branches = await git.RunAsync(repo, ct, "branch", "-a", "--format=%(refname:short)");
+        foreach (Match m in KeyRx().Matches(branches.StdOut.ToUpperInvariant())) keys.Add(m.Value);
+        lock (_keyCache) _keyCache[repo] = (DateTime.Now, keys);
+        return [.. keys];
+    }
+
     private record LogEntry(string Sha, string Author, DateTime Date, string Subject, string Refs, int Added, int Removed, List<string> Files);
 
     private static IEnumerable<LogEntry> ParseLog(string outp)
