@@ -89,7 +89,7 @@ Copit zeigt zu jedem Agent, wie weit das Ticket geliefert ist: **Commit → Push
 - **Tasks im Epic:** Fehlt ein passendes Ticket, legt Copit es im Epic an, mit Account.
 - **Eigene Buchungen:** „+ Eigene Buchung“ legt Buchungen selbst an. Sie bleiben beim Vorschlagen erhalten; die KI verteilt nur den Rest.
 - **Ganze Woche:** „Woche vorschlagen“ erzeugt Vorschläge für alle offenen Arbeitstage der Woche, „Woche buchen“ bucht sie gesammelt.
-- **Wissen:** Unter „Regeln & Wissen“ lassen sich gemerkte Accounts (pro Ticket und Jira-Projekt), Ticket→Projekt-Zuordnungen, Themen-Zuordnungen und Antworten auf Rückfragen ansehen und bearbeiten.
+- **Wissen:** Auf der eigenen Seite **Wissen** (Navigation links) oder unter „Regeln & Wissen“ lassen sich gemerkte Accounts (pro Ticket und Jira-Projekt), Ticket→Projekt-Zuordnungen, Themen-Zuordnungen und Antworten auf Rückfragen ansehen und bearbeiten.
 - **Ohne Jira:** Gebucht wird intern, auch ohne Ticket.
 
 ## Projekte

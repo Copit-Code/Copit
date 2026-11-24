@@ -32,6 +32,7 @@ public static class Routes
     public const string Docs = "docs";
     public const string Extensions = "extensions";
     public const string Changes = "changes";
+    public const string Knowledge = "knowledge";
 }
 
 /// <summary>Einfache View-Navigation innerhalb des Hauptfensters (Views bleiben im Speicher → Zustand bleibt erhalten).</summary>

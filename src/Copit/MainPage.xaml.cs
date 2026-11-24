@@ -18,6 +18,7 @@ public partial class MainPage : ContentPage
     [
         (Routes.Home, "home", "Cockpit", false),
         (Routes.Time, "calendar", "Zeitbuchung", false),
+        (Routes.Knowledge, "note", "Wissen", false),
         (Routes.Board, "list", "Agents", false),
         (Routes.Changes, "diff", "Änderungen", false),
         (Routes.Session, "chat", "Session", false),
@@ -189,6 +190,7 @@ public partial class MainPage : ContentPage
             Routes.Docs => _sp.GetRequiredService<DocsView>(),
             Routes.Extensions => _sp.GetRequiredService<ExtensionsView>(),
             Routes.Changes => _sp.GetRequiredService<ChangesView>(),
+            Routes.Knowledge => _sp.GetRequiredService<KnowledgeView>(),
             _ => _sp.GetRequiredService<SettingsView>(),
         };
         v.IsVisible = false;
