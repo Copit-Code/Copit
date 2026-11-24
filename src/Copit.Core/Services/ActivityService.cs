@@ -76,13 +76,34 @@ public class ActivityService
     private readonly Dictionary<string, (DateTime Mtime, long Size, Dictionary<string, RawSession> Sessions)> _cache = [];
     private readonly object _lock = new();
 
-    public ActivityService(string? root = null) =>
-        _root = root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
+    private readonly IReadOnlyList<string> _copilotRoots;
 
-    private class Point { public DateTime Ts; public long In, Out, CR, CW; public string? Model; public bool HasUsage; }
+    /// <param name="root">Claude-Transkripte (Standard ~/.claude/projects).</param>
+    /// <param name="copilotRoots">Copilot-CLI-Ordner (Standard: $COPILOT_HOME, ~/.copilot, $XDG_STATE_HOME/.copilot).</param>
+    public ActivityService(string? root = null, IReadOnlyList<string>? copilotRoots = null)
+    {
+        _root = root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "projects");
+        _copilotRoots = copilotRoots ?? DefaultCopilotRoots();
+    }
+
+    public static List<string> DefaultCopilotRoots()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var list = new List<string?> { Environment.GetEnvironmentVariable("COPILOT_HOME"), Path.Combine(home, ".copilot") };
+        if (Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } xdg) list.Add(Path.Combine(xdg, ".copilot"));
+        return [.. list.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Path.GetFullPath(x!)).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private class Point
+    {
+        public DateTime Ts; public long In, Out, CR, CW; public string? Model; public bool HasUsage;
+        /// <summary>Copilot: Premium Requests und AI Credits (Kosten werden mit den aktuellen Preisen berechnet).</summary>
+        public double Premium, Credits; public bool Copilot;
+    }
 
     private class RawSession
     {
+        public string Source = "claude";
         public string Id = "", Cwd = "", Entry = "Claude Code", Title = "";
         public string? Branch;
         public List<Point> Points = [];
@@ -221,6 +242,134 @@ public class ActivityService
         return outp;
     }
 
+    private static bool SamePath(string? a, string? b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+        static string N(string p) { try { return Path.GetFullPath(p).TrimEnd('\\', '/'); } catch { return p.TrimEnd('\\', '/'); } }
+        var x = N(a); var y = N(b);
+        return x.Equals(y, StringComparison.OrdinalIgnoreCase) || y.StartsWith(x + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+               || y.StartsWith(x + "/", StringComparison.OrdinalIgnoreCase) || y.StartsWith(x + "\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Copilot-CLI-Sessions: &lt;root&gt;/session-state/&lt;id&gt;/events.jsonl (seit Copilot CLI 0.0.380).</summary>
+    private List<RawSession> CopilotTranscripts(DateTime from, DateTime to)
+    {
+        var outp = new List<RawSession>();
+        foreach (var root in _copilotRoots)
+        {
+            var dir = Path.Combine(root, "session-state");
+            if (!Directory.Exists(dir)) continue;
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateDirectories(dir).Select(d => Path.Combine(d, "events.jsonl")).Where(File.Exists).ToList(); } catch { continue; }
+            foreach (var f in files)
+            {
+                FileInfo fi;
+                try { fi = new FileInfo(f); } catch { continue; }
+                if (fi.LastWriteTime < from) continue;
+                Dictionary<string, RawSession> sessions;
+                lock (_lock)
+                {
+                    if (!_cache.TryGetValue(f, out var c) || c.Mtime != fi.LastWriteTimeUtc || c.Size != fi.Length)
+                    {
+                        try { c = (fi.LastWriteTimeUtc, fi.Length, ParseCopilotFile(f)); _cache[f] = c; } catch { continue; }
+                    }
+                    sessions = c.Sessions;
+                }
+                outp.AddRange(sessions.Values.Where(s => s.Points.Any(p => p.Ts >= from && p.Ts < to)));
+            }
+        }
+        return outp.GroupBy(s => s.Id).Select(g => g.First()).ToList();   // gleicher Ordner über mehrere Wurzeln (Symlink)
+    }
+
+    /// <summary>Liest eine events.jsonl der Copilot CLI. Tokens/Kosten stehen nur in session.shutdown (je Prozesslauf).</summary>
+    private static Dictionary<string, RawSession> ParseCopilotFile(string file)
+    {
+        var s = new RawSession { Source = "copilot", Id = "copilot:" + Path.GetFileName(Path.GetDirectoryName(file)), Entry = "Copilot CLI" };
+        var shutdowns = new Dictionary<long, Point>();   // sessionStartTime → letzter Stand dieses Prozesslaufs
+        var agents = new HashSet<string>();
+        using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var sr = new StreamReader(fs);
+        string? line;
+        while ((line = sr.ReadLine()) != null)
+        {
+            if (line.Length == 0) continue;
+            JsonElement j;
+            try { j = JsonDocument.Parse(line).RootElement; } catch { continue; }
+            if (j.ValueKind != JsonValueKind.Object) continue;
+            var type = j.TryGetProperty("type", out var tp) ? tp.GetString() ?? "" : "";
+            if (!j.TryGetProperty("timestamp", out var tsEl) || tsEl.ValueKind != JsonValueKind.String ||
+                !DateTime.TryParse(tsEl.GetString(), null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var ts)) continue;
+            ts = ts.ToLocalTime();
+            var data = j.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object ? d : default;
+            string? Str(JsonElement e, string n) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            double Num(JsonElement e, string n) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+            void Context(JsonElement ctx)
+            {
+                if (ctx.ValueKind != JsonValueKind.Object) return;
+                if (Str(ctx, "cwd") is { Length: > 0 } cwd) s.Cwd = Str(ctx, "gitRoot") is { Length: > 0 } gr ? gr : cwd;
+                if (Str(ctx, "branch") is { Length: > 0 } br && br != "HEAD") s.Branch = br;
+            }
+            if (j.TryGetProperty("agentId", out var ag) && ag.GetString() is { Length: > 0 } agId) agents.Add(agId);
+
+            switch (type)
+            {
+                case "session.start":
+                case "session.resume":
+                    if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("context", out var ctx)) Context(ctx);
+                    if (Str(data, "selectedModel") is { Length: > 0 } sm) s.Models.Add(sm);
+                    if (Str(data, "sessionId") is { Length: > 0 } sid) s.Id = "copilot:" + sid;
+                    continue;   // kein Arbeitszeitpunkt
+                case "session.context_changed":
+                    Context(data);
+                    continue;
+                case "session.model_change":
+                    if (Str(data, "newModel") is { Length: > 0 } nm) s.Models.Add(nm);
+                    continue;
+                case "user.message":
+                    if (j.TryGetProperty("agentId", out _)) break;
+                    s.Prompts++;
+                    if (s.Title == "" && Str(data, "content") is { Length: > 0 } text)
+                    {
+                        var t = Regex.Replace(text, @"\s+", " ").Trim();
+                        s.Title = t.Length > 80 ? t[..80] : t;
+                    }
+                    break;
+                case "assistant.message":
+                    if (Str(data, "model") is { Length: > 0 } m) s.Models.Add(m);
+                    break;
+                case "tool.execution_start":
+                    s.ToolCalls++;
+                    break;
+                case "session.shutdown":
+                {
+                    long inp = 0, outp = 0, cr = 0, cw = 0;
+                    if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("modelMetrics", out var mm) && mm.ValueKind == JsonValueKind.Object)
+                        foreach (var mp in mm.EnumerateObject())
+                            if (mp.Value.TryGetProperty("usage", out var u))
+                            { inp += (long)Num(u, "inputTokens"); outp += (long)Num(u, "outputTokens"); cr += (long)Num(u, "cacheReadTokens"); cw += (long)Num(u, "cacheWriteTokens"); }
+                    // inputTokens enthält den Cache – frische Eingabe = Rest
+                    var fresh = inp >= cr + cw ? inp - cr - cw : inp;
+                    var startKey = (long)Num(data, "sessionStartTime");
+                    shutdowns[startKey] = new Point
+                    {
+                        Ts = ts, HasUsage = true, Copilot = true, In = fresh, Out = outp, CR = cr, CW = cw, Model = Str(data, "currentModel"),
+                        Premium = Num(data, "totalPremiumRequests"), Credits = Num(data, "totalNanoAiu") / 1e9,
+                    };
+                    continue;
+                }
+                default:
+                    if (type.StartsWith("session.", StringComparison.Ordinal)) continue;
+                    break;
+            }
+            s.Points.Add(new Point { Ts = ts });
+        }
+        s.Points.AddRange(shutdowns.Values);
+        s.Points.Sort((a, b) => a.Ts.CompareTo(b.Ts));
+        s.Subagents = agents.Count;
+        if (s.Title == "") s.Title = "Copilot-Session";
+        return s.Points.Count == 0 ? [] : new() { [s.Id] = s };
+    }
+
     public static string ProjectName(string p)
     {
         if (string.IsNullOrWhiteSpace(p)) return "?";
@@ -237,14 +386,22 @@ public class ActivityService
         var list = agents.ToList();
         var bySession = list.Where(a => !string.IsNullOrEmpty(a.CliSessionId)).GroupBy(a => a.CliSessionId!).ToDictionary(g => g.Key, g => g.First());
         var outp = new List<ActSession>();
-        foreach (var s in Transcripts(from, to))
+        var copilotAgents = list.Where(a => a.Provider == AiProvider.Copilot).ToList();
+        foreach (var s in Transcripts(from, to).Concat(CopilotTranscripts(from, to)))
         {
             var pts = s.Points.Where(p => p.Ts >= from && p.Ts < to).ToList();
             if (pts.Count == 0) continue;
-            bySession.TryGetValue(s.Id, out var agent);
+            ChatSession? agent = null;
+            if (s.Source == "copilot")
+            {
+                // Von Copit gestartete Copilot-Läufe stehen auch hier – die zählt der Copit-Agent bereits
+                if (copilotAgents.Any(a => SamePath(agentRepo(a.ProjectId), s.Cwd) && a.Runs.Any(r => r.Start <= s.Points[^1].Ts.AddMinutes(1) && (r.End ?? DateTime.Now) >= s.Points[0].Ts.AddMinutes(-1))))
+                    continue;
+            }
+            else bySession.TryGetValue(s.Id, out agent);
             var a = new ActSession
             {
-                Id = s.Id, Source = agent != null ? "copit" : "claude", Title = agent?.Title ?? (s.Title == "" ? "Session" : s.Title),
+                Id = s.Id, Source = agent != null ? "copit" : s.Source, Title = agent?.Title ?? (s.Title == "" ? "Session" : s.Title),
                 ProjectPath = agent != null ? agentRepo(agent.ProjectId) ?? s.Cwd : s.Cwd, Branch = agent?.Branch ?? s.Branch,
                 Entry = agent != null ? "Copit" : s.Entry, Models = s.Models.Select(Pricing.PrettyModel).ToList(), Prompts = s.Prompts,
                 ToolCalls = s.ToolCalls, Subagents = s.Subagents, Segments = SegmentsOf(pts.Select(p => p.Ts)), AgentId = agent?.Id, Ticket = agent?.Ticket,
@@ -254,7 +411,9 @@ public class ActivityService
             foreach (var p in pts.Where(p => p.HasUsage))
             {
                 a.InputTokens += p.In; a.OutputTokens += p.Out; a.CacheRead += p.CR; a.CacheWrite += p.CW;
-                var c = Pricing.Cost(p.In, p.Out, p.CR, p.CW, p.Model);
+                var c = p.Copilot
+                    ? p.Premium * Math.Max(0, AgentRun.CopilotPrices.Premium) + p.Credits * Math.Max(0, AgentRun.CopilotPrices.Credit)
+                    : Pricing.Cost(p.In, p.Out, p.CR, p.CW, p.Model);
                 a.CostUsd += c;
                 var idx = a.Segments.FindIndex(g => p.Ts >= g.Start && p.Ts <= g.End);
                 if (idx < 0) idx = a.Segments.Count - 1;

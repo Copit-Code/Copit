@@ -40,7 +40,7 @@
                 <Button Grid.Column="1" Text="Heute" Style="{StaticResource Chip}" Command="{Binding TodayCommand}" />
                 <c:IconButton Icon="chevron-right" Grid.Column="2" Command="{Binding NextMonthCommand}" />
                 <ActivityIndicator Grid.Column="3" IsRunning="{Binding LoadingMonth}" IsVisible="{Binding LoadingMonth}" HorizontalOptions="Start" WidthRequest="18" HeightRequest="18" Margin="10,0" />
-                <Button Grid.Column="5" Text="Regeln &amp; Soll" Style="{StaticResource Chip}" Command="{Binding ToggleRulesCommand}" />
+                <Button Grid.Column="5" Text="Regeln &amp; Wissen" Style="{StaticResource Chip}" Command="{Binding ToggleRulesCommand}" />
             </Grid>
 
             <Grid Grid.Row="2" ColumnDefinitions="*,*,*,*,*,*,*">
@@ -99,7 +99,7 @@
                 WidthRequest="440" Margin="0,80,20,20" ZIndex="5">
             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
                 <Grid ColumnDefinitions="*,Auto">
-                    <Label Text="Regeln &amp; Soll-Stunden" Style="{StaticResource H2}" />
+                    <Label Text="Regeln, Soll &amp; Wissen" Style="{StaticResource H2}" />
                     <c:IconButton Icon="x" Grid.Column="1" Command="{Binding ToggleRulesCommand}" />
                 </Grid>
                 <Grid Grid.Row="1" ColumnDefinitions="*,100" ColumnSpacing="10">
@@ -126,6 +126,57 @@
                         </BindableLayout.ItemTemplate>
                     </VerticalStackLayout>
 
+                    <Entry Text="{Binding MemorySearch}" Placeholder="Wissen durchsuchen: Ticket, Account, Thema…" />
+
+                    <!-- Gemerkte Accounts (Kostenstellen) -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="ACCOUNTS / KOSTENSTELLEN" Style="{StaticResource Caption}" />
+                            <Label Text="Gemerkt pro Ticket und pro Jira-Projekt – gilt, wenn am Ticket kein Account steht" FontSize="11.5" TextColor="{StaticResource Muted}" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1" Text="Account" Style="{StaticResource Chip}" Command="{Binding AddAccountMemoryCommand}" VerticalOptions="Center" />
+                    </Grid>
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding AccountRows}" Spacing="4">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}" ToolTipProperties.Text="Tippen zum Bearbeiten">
+                                    <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditMemoryCommand}" CommandParameter="{Binding .}" /></Grid.GestureRecognizers>
+                                    <VerticalStackLayout Spacing="0">
+                                        <Label Text="{Binding Title}" FontSize="12.5" FontAttributes="Bold" TextColor="{StaticResource Cyan}" LineBreakMode="TailTruncation" />
+                                        <Label Text="{Binding Detail}" FontSize="10.5" TextColor="{StaticResource Muted}" LineBreakMode="TailTruncation" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="{Binding Value}" Style="{StaticResource Key}" VerticalOptions="Center" IsVisible="True" />
+                                    <c:IconButton Grid.Column="2" Icon="trash" IconSize="13" WidthRequest="24" HeightRequest="24"
+                                                  Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteMemoryCommand}" CommandParameter="{Binding .}" />
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                    <Label Text="Noch keine Accounts gemerkt – Copit merkt sie sich, wenn du beim Buchen einen Account wählst." FontSize="11.5" TextColor="{StaticResource Muted}"
+                           IsVisible="{Binding HasAccountRows, Converter={StaticResource Not}}" />
+
+                    <!-- Ticket -> Projekt (geteiltes Epic) -->
+                    <VerticalStackLayout Spacing="2" IsVisible="{Binding HasAssignmentRows}">
+                        <Label Text="TICKET → PROJEKT" Style="{StaticResource Caption}" />
+                        <Label Text="Manuelle Zuordnung, wenn sich mehrere Projekte ein Epic teilen" FontSize="11.5" TextColor="{StaticResource Muted}" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding AssignmentRows}" Spacing="4" IsVisible="{Binding HasAssignmentRows}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}" ToolTipProperties.Text="Tippen zum Bearbeiten">
+                                    <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditMemoryCommand}" CommandParameter="{Binding .}" /></Grid.GestureRecognizers>
+                                    <VerticalStackLayout Spacing="0">
+                                        <Label Text="{Binding Title}" FontSize="12.5" FontAttributes="Bold" TextColor="{StaticResource Cyan}" LineBreakMode="TailTruncation" />
+                                        <Label Text="{Binding Detail}" FontSize="10.5" TextColor="{StaticResource Muted}" LineBreakMode="TailTruncation" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="{Binding Value}" Style="{StaticResource Key}" VerticalOptions="Center" IsVisible="False" />
+                                    <c:IconButton Grid.Column="2" Icon="trash" IconSize="13" WidthRequest="24" HeightRequest="24"
+                                                  Command="{Binding Source={x:Reference Root}, Path=BindingContext.DeleteMemoryCommand}" CommandParameter="{Binding .}" />
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
                     <!-- Gelernte Zuordnungen Thema/Repo -> Ticket -->
                     <Grid ColumnDefinitions="*,Auto">
                         <VerticalStackLayout Spacing="2">
@@ -137,7 +188,8 @@
                     <VerticalStackLayout BindableLayout.ItemsSource="{Binding Topics}" Spacing="4">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
-                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}" ToolTipProperties.Text="Tippen zum Bearbeiten">
+                                    <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditTopicCommand}" CommandParameter="{Binding .}" /></Grid.GestureRecognizers>
                                     <VerticalStackLayout Spacing="0">
                                         <Label Text="{Binding Topic}" FontSize="12.5" LineBreakMode="TailTruncation" />
                                         <Label Text="{Binding Repo}" FontSize="10.5" TextColor="{StaticResource Muted}" IsVisible="{Binding Repo, Converter={StaticResource HasText}}" />
@@ -163,7 +215,8 @@
                     <VerticalStackLayout BindableLayout.ItemsSource="{Binding Facts}" Spacing="4">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="10,6" BackgroundColor="{StaticResource Panel}" ToolTipProperties.Text="Tippen zum Bearbeiten">
+                                    <Grid.GestureRecognizers><TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.EditFactCommand}" CommandParameter="{Binding .}" /></Grid.GestureRecognizers>
                                     <VerticalStackLayout Spacing="1">
                                         <Label Text="{Binding Question}" FontSize="12" TextColor="{StaticResource Text2}" LineBreakMode="WordWrap" />
                                         <Label Text="{Binding Answer}" FontSize="12.5" FontAttributes="Bold" LineBreakMode="WordWrap" />
@@ -313,6 +366,15 @@
                     </VerticalStackLayout>
                     <Button Text="Analysieren &amp; Buchungen vorschlagen" Style="{StaticResource Primary}" HeightRequest="44" FontSize="14"
                             Command="{Binding AnalyzeCommand}" IsVisible="{Binding IsWorking, Converter={StaticResource Not}}" />
+                    <!-- Ganze Woche -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsVisible="{Binding IsWorking, Converter={StaticResource Not}}">
+                        <Button Text="{Binding WeekTitle, StringFormat='Woche vorschlagen · {0}'}" Style="{StaticResource Ghost}"
+                                Command="{Binding SuggestWeekCommand}" CommandParameter="ai"
+                                ToolTipProperties.Text="Für alle Arbeitstage dieser Woche mit fehlenden Stunden Vorschläge erzeugen (mit der gewählten KI). Tage mit Vorschlägen bleiben unverändert." />
+                        <Button Grid.Column="1" Text="{Binding WeekTitle, StringFormat='Woche buchen · {0}'}" Style="{StaticResource Ghost}"
+                                Command="{Binding BookWeekCommand}"
+                                ToolTipProperties.Text="Alle offenen Vorschläge der Woche auf einmal buchen." />
+                    </Grid>
 
                     <Label Text="{Binding Error}" TextColor="{StaticResource Red}" IsVisible="{Binding Error, Converter={StaticResource HasText}}" />
 
@@ -401,6 +463,8 @@
                                                             <TapGestureRecognizer Command="{Binding Source={x:Reference Root}, Path=BindingContext.OpenIssueCommand}" CommandParameter="{Binding IssueKey}" />
                                                         </Label.GestureRecognizers>
                                                     </Label>
+                                                    <Label Text="EIGENE" IsVisible="{Binding IsManual}" FontSize="10" FontFamily="Cascadia Mono" TextColor="{StaticResource Accent}" VerticalOptions="Center"
+                                                           ToolTipProperties.Text="Selbst angelegt – bleibt beim erneuten Vorschlagen erhalten" />
                                                     <c:IconButton Icon="pencil" IconSize="12" WidthRequest="22" HeightRequest="22" ToolTipProperties.Text="Ticket ändern – Copit merkt sich die Zuordnung"
                                                                   Command="{Binding Source={x:Reference Root}, Path=BindingContext.ChangeTicketCommand}" CommandParameter="{Binding .}" IsVisible="{Binding Booked, Converter={StaticResource Not}}" />
                                                 </HorizontalStackLayout>
@@ -451,7 +515,7 @@
                     </VerticalStackLayout>
 
                     <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasSuggestions}">
-                        <Button Text="Buchung" Style="{StaticResource Chip}" Command="{Binding AddSuggestionCommand}" />
+                        <Button Text="+ Eigene Buchung" Style="{StaticResource Chip}" Command="{Binding AddSuggestionCommand}" />
                         <Label Grid.Column="1" Text="{Binding TotalText}" HorizontalOptions="End" VerticalOptions="Center" FontAttributes="Bold" TextColor="{StaticResource Amber}">
                             <Label.Triggers>
                                 <DataTrigger TargetType="Label" Binding="{Binding TotalOk}" Value="True"><Setter Property="TextColor" Value="{StaticResource Green}" /></DataTrigger>
@@ -463,7 +527,8 @@
                                 Command="{Binding BookCommand}" IsEnabled="{Binding CanBook}" />
                         <ActivityIndicator IsRunning="{Binding IsBooking}" IsVisible="{Binding IsBooking}" Color="White" HorizontalOptions="End" Margin="0,0,16,0" WidthRequest="18" HeightRequest="18" />
                     </Grid>
-                    <Button Text="Manuelle Buchung" Style="{StaticResource Ghost}" Command="{Binding AddSuggestionCommand}" IsVisible="{Binding HasSuggestions, Converter={StaticResource Not}}" />
+                    <Button Text="+ Eigene Buchung" Style="{StaticResource Ghost}" Command="{Binding AddSuggestionCommand}" IsVisible="{Binding HasSuggestions, Converter={StaticResource Not}}"
+                            ToolTipProperties.Text="Eigene Buchungen bleiben beim Vorschlagen erhalten – die KI verteilt nur den Rest." />
                 </VerticalStackLayout>
             </ScrollView>
         </Grid>

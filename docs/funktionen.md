@@ -63,7 +63,7 @@ Copit zeigt zu jedem Agent, wie weit das Ticket geliefert ist: **Commit → Push
   - Tag- und Wochenansicht mit Zeitleisten pro Agent und Projekt.
   - Getrennt nach KI-Zeit, Agent-Zeit und Tool-Zeit.
   - Mit Tokens und Kosten in Dollar.
-  - Echte Claude-Sessions werden einbezogen.
+  - Echte Claude-Code- und Copilot-CLI-Sessions außerhalb von Copit werden einbezogen (`~/.claude/projects`, `~/.copilot/session-state`).
 - **Budgets:**
   - Als Kosten oder Stunden, pro Woche, Monat oder gesamt.
   - Begrenzt auf bestimmte Projektordner oder für alles.
@@ -87,6 +87,9 @@ Copit zeigt zu jedem Agent, wie weit das Ticket geliefert ist: **Commit → Push
   - Das gilt auch für Buchungen von außerhalb Copit, die Accounts liest Copit über Tempo.
   - In der Tagesansicht lässt sich ein fehlender Account an der bestehenden Buchung nachtragen.
 - **Tasks im Epic:** Fehlt ein passendes Ticket, legt Copit es im Epic an, mit Account.
+- **Eigene Buchungen:** „+ Eigene Buchung“ legt Buchungen selbst an. Sie bleiben beim Vorschlagen erhalten; die KI verteilt nur den Rest.
+- **Ganze Woche:** „Woche vorschlagen“ erzeugt Vorschläge für alle offenen Arbeitstage der Woche, „Woche buchen“ bucht sie gesammelt.
+- **Wissen:** Unter „Regeln & Wissen“ lassen sich gemerkte Accounts (pro Ticket und Jira-Projekt), Ticket→Projekt-Zuordnungen, Themen-Zuordnungen und Antworten auf Rückfragen ansehen und bearbeiten.
 - **Ohne Jira:** Gebucht wird intern, auch ohne Ticket.
 
 ## Projekte
