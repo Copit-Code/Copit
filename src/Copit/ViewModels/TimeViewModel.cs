@@ -118,6 +118,7 @@ public partial class SuggestionVM : ObservableObject
         RefreshAccount();
     }
     public string Reason => Model.Reason;
+    public bool IsManual => Model.Manual;
     public double Confidence => Model.Confidence;
     public string ConfidenceText => $"{Model.Confidence * 100:0}%";
 
@@ -167,6 +168,10 @@ public partial class TimeQuestionVM : ObservableObject
     public void Refresh() => OnPropertyChanged(nameof(Answered));
 }
 
+/// <summary>Ein Eintrag im Wissen: gemerkter Account (Ticket/Jira-Projekt) oder Ticket→Projekt-Zuordnung.</summary>
+/// <param name="Kind">issue | project | assign</param>
+public record MemoryRow(string Kind, string Key, string Value, string Title, string Detail);
+
 public partial class TimeViewModel : ObservableObject, IActivatable
 {
     private readonly TimeBookingService _time;
@@ -192,6 +197,12 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     public ObservableCollection<TimeQuestionVM> Questions { get; } = [];
     public ObservableCollection<TopicMapping> Topics { get; } = [];
     public ObservableCollection<TimeFact> Facts { get; } = [];
+    /// <summary>Gemerkte Accounts (Kostenstellen) pro Ticket und pro Jira-Projekt.</summary>
+    public ObservableCollection<MemoryRow> AccountRows { get; } = [];
+    /// <summary>Ticket → Copit-Projekt (bei geteiltem Epic).</summary>
+    public ObservableCollection<MemoryRow> AssignmentRows { get; } = [];
+    [ObservableProperty] public partial string MemorySearch { get; set; } = "";
+    partial void OnMemorySearchChanged(string value) => LoadMemory();
     public bool HasQuestions => Questions.Any(q => !q.Answered);
     public bool HasUnassigned => Suggestions.Any(s => s.NeedsTicket && !s.Booked);
 
@@ -308,7 +319,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     {
         if (oldValue != null) oldValue.IsSelected = false;
         if (newValue != null) newValue.IsSelected = true;
-        OnPropertyChanged(nameof(SelectedTitle)); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(BookedText));
+        OnPropertyChanged(nameof(SelectedTitle)); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(BookedText)); OnPropertyChanged(nameof(WeekTitle));
     }
 
     private bool _loadingNote;
@@ -503,7 +514,10 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         Error = "";
         IsWorking = true;
         Steps.Clear();
+        // Eigene Buchungen bleiben erhalten und zählen als bereits eingeplant
+        var manual = Suggestions.Where(s => s.Model.Manual && !s.Booked).Select(s => s.Model).ToList();
         Suggestions.Clear();
+        foreach (var m in manual) AddSuggestionVm(m);
         Questions.Clear();
         Summary = "";
         _cts = new CancellationTokenSource();
@@ -517,31 +531,8 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         });
         try
         {
-            var from = day.ToDateTime(TimeOnly.MinValue);
-            var daySessions = await Task.Run(() => _activity.Build(from, from.AddDays(1), _sessions.All, id => _data.Project(id)?.SourceFolder)
-                .Select(a => new DaySession(a.Title, a.Project, a.Branch, a.Ticket, (int)ActivityService.Union(a.Segments).TotalMinutes)).ToList());
-            if (_data.Sources.Value.Sessions && daySessions.Count > 0) Progress($"KI-Sessions · {daySessions.Count} Sessions, {daySessions.Sum(x => x.Minutes)} min aktiv");
-            _ctx = await _time.GatherAsync(day, 0, daySessions, Progress, _cts.Token, _data.Sources.Value);
-            _ctx.TargetHours = _ctx.BookedHours + hours.Value;
-            foreach (var w in _ctx.Warnings) Progress("Hinweis: " + w);
-
-            BookingPlan plan;
-            if (useAi)
-            {
-                try { plan = await _time.SuggestAsync(_ctx, Provider, Progress, _cts.Token); }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception e)
-                {
-                    _toast.Show("KI nicht verfügbar – nutze Heuristik", e.Message, NoticeLevel.Warning);
-                    plan = _time.HeuristicPlan(_ctx);
-                    await _time.ResolveAccountsAsync(plan.Bookings, _ctx.Issues, Progress, _cts.Token);
-                }
-            }
-            else
-            {
-                plan = _time.HeuristicPlan(_ctx);
-                await _time.ResolveAccountsAsync(plan.Bookings, _ctx.Issues, Progress, _cts.Token);
-            }
+            var (plan, ctx) = await PlanDayAsync(day, hours.Value, useAi, manual, Progress, _cts.Token);
+            _ctx = ctx;
             Progress("Fertig");
             if (Steps.Count > 0) Steps[^1].Done = true;
 
@@ -550,18 +541,206 @@ public partial class TimeViewModel : ObservableObject, IActivatable
             foreach (var q in plan.Questions) Questions.Add(new TimeQuestionVM(q));
             if (plan.Bookings.Count == 0 && string.IsNullOrEmpty(Summary)) Summary = "Keine passenden Tickets gefunden. Trage eine Notiz zum Tag ein und versuche es erneut.";
             var entry = _data.Day(day);
-            entry.LastSuggestions = plan.Bookings;
+            entry.LastSuggestions = [.. manual, .. plan.Bookings];
             entry.LastSummary = plan.Summary;
             entry.Questions = plan.Questions;
             await _data.Days.SaveAsync();
-            Selected.HasDraft = plan.Bookings.Count > 0;
+            Selected.HasDraft = entry.LastSuggestions.Count > 0;
         }
         catch (OperationCanceledException) { Summary = "Abgebrochen."; }
         catch (Exception e) { Error = e.Message; }
         finally { IsWorking = false; }
     }
 
+    /// <summary>
+    /// Plan für einen Tag. Eigene Buchungen (<paramref name="manual"/>) gehen als „schon eingeplant“ in die Analyse ein –
+    /// die KI verteilt nur noch den Rest und schlägt sie nicht doppelt vor.
+    /// </summary>
+    private async Task<(BookingPlan Plan, DayContext Ctx)> PlanDayAsync(DateOnly day, double hours, bool useAi, List<BookingSuggestion> manual,
+        Action<string> progress, CancellationToken ct)
+    {
+        var from = day.ToDateTime(TimeOnly.MinValue);
+        var daySessions = await Task.Run(() => _activity.Build(from, from.AddDays(1), _sessions.All, id => _data.Project(id)?.SourceFolder)
+            .Select(a => new DaySession(a.Title, a.Project, a.Branch, a.Ticket, (int)ActivityService.Union(a.Segments).TotalMinutes)).ToList(), ct);
+        if (_data.Sources.Value.Sessions && daySessions.Count > 0) progress($"KI-Sessions · {daySessions.Count} Sessions, {daySessions.Sum(x => x.Minutes)} min aktiv");
+        var ctx = await _time.GatherAsync(day, 0, daySessions, progress, ct, _data.Sources.Value);
+        ctx.TargetHours = ctx.BookedHours + hours;
+        foreach (var w in ctx.Warnings) progress("Hinweis: " + w);
+        foreach (var m in manual.Where(m => m.Hours > 0))
+            ctx.ExistingWorklogs.Add(new JiraWorklog
+            {
+                Id = "planned-" + Guid.NewGuid().ToString("N")[..8], IssueKey = m.IssueKey, IssueSummary = m.IssueSummary,
+                Started = from.AddHours(8), TimeSpentSeconds = (long)Math.Round(m.Hours * 3600),
+                Comment = "(eigene Buchung, schon eingeplant) " + m.Comment,
+            });
+        if (manual.Count > 0) progress($"Eigene Buchungen · {manual.Sum(m => m.Hours):0.##}h schon eingeplant");
+
+        BookingPlan plan;
+        if (ctx.RemainingHours <= 0.01)
+            plan = new BookingPlan { Summary = manual.Count > 0 ? "Deine eigenen Buchungen decken die Stunden schon ab." : "Für diesen Tag ist nichts mehr zu buchen." };
+        else if (useAi)
+        {
+            try { plan = await _time.SuggestAsync(ctx, Provider, progress, ct); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception e)
+            {
+                _toast.Show("KI nicht verfügbar – nutze Heuristik", e.Message, NoticeLevel.Warning);
+                plan = _time.HeuristicPlan(ctx);
+                await _time.ResolveAccountsAsync(plan.Bookings, ctx.Issues, progress, ct);
+            }
+        }
+        else
+        {
+            plan = _time.HeuristicPlan(ctx);
+            await _time.ResolveAccountsAsync(plan.Bookings, ctx.Issues, progress, ct);
+        }
+        return (plan, ctx);
+    }
+
     [RelayCommand] private void Cancel() => _cts?.Cancel();
+
+    // --------------- Ganze Woche ---------------
+
+    /// <summary>Arbeitstage der Woche des gewählten Tags (Mo–So), ohne Tage in der Zukunft.</summary>
+    private List<DateOnly> WeekDaysOf(DateOnly d)
+    {
+        var monday = d.AddDays(-(((int)d.DayOfWeek + 6) % 7));
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return [.. Enumerable.Range(0, 7).Select(monday.AddDays).Where(x => x <= today && _time.IsWorkDay(x))];
+    }
+
+    public string WeekTitle => Selected == null ? "" : $"KW {ISOWeek.GetWeekOfYear(Selected.Date.ToDateTime(TimeOnly.MinValue))}";
+
+    /// <summary>Für alle Arbeitstage der Woche mit fehlenden Stunden Vorschläge erzeugen (eigene Buchungen bleiben).</summary>
+    [RelayCommand]
+    private async Task SuggestWeekAsync(string? mode)
+    {
+        if (Selected == null || IsWorking) return;
+        var useAi = mode != "heuristic";
+        var days = WeekDaysOf(Selected.Date);
+        if (days.Count == 0) { _toast.Show("Keine Arbeitstage", "In dieser Woche gibt es (noch) keine Arbeitstage zu buchen.", NoticeLevel.Warning); return; }
+
+        List<JiraWorklog> logs;
+        try { logs = await _time.GetWorklogsAsync(days[0], days[^1]); }
+        catch (Exception e) { _toast.Error(e, "Buchungen der Woche konnten nicht geladen werden"); return; }
+        var todo = new List<(DateOnly Day, double Hours, List<BookingSuggestion> Manual)>();
+        var skipped = new List<string>();
+        foreach (var d in days)
+        {
+            var booked = logs.Where(l => DateOnly.FromDateTime(l.Started) == d).Sum(l => l.TimeSpentSeconds) / 3600.0;
+            var missing = Math.Round(_time.TargetFor(d) - booked, 2);
+            var entry = _data.PeekDay(d);
+            var open = entry?.LastSuggestions.Where(s => !s.Booked).ToList() ?? [];
+            if (missing <= 0.01) continue;
+            if (open.Any(s => !s.Manual)) { skipped.Add(d.ToString("ddd dd.MM.", De)); continue; }   // Vorschläge schon vorhanden → nicht überschreiben
+            todo.Add((d, missing, open.Where(s => s.Manual).ToList()));
+        }
+        if (todo.Count == 0)
+        {
+            _toast.Show("Nichts vorzuschlagen", skipped.Count > 0 ? $"Für {string.Join(", ", skipped)} gibt es schon Vorschläge – „Woche buchen“ bucht sie." : "Alle Arbeitstage der Woche sind gebucht.", NoticeLevel.Info);
+            return;
+        }
+        var list = string.Join("\n", todo.Select(t => $"{t.Day.ToString("ddd dd.MM.", De)}: {t.Hours:0.##}h" + (t.Manual.Count > 0 ? $" (davon {t.Manual.Sum(m => m.Hours):0.##}h eigene)" : "")));
+        if (!await Dialogs.Confirm($"Woche vorschlagen ({WeekTitle})", $"{(useAi ? "Mit KI" : "Ohne KI")} für {todo.Count} Tag(e) vorschlagen:\n{list}" +
+                (skipped.Count > 0 ? $"\n\nÜbersprungen (hat schon Vorschläge): {string.Join(", ", skipped)}" : ""), "Vorschlagen")) return;
+
+        Error = ""; IsWorking = true; Steps.Clear();
+        _cts = new CancellationTokenSource();
+        var done = 0; var questions = 0;
+        try
+        {
+            foreach (var (d, hours, manual) in todo)
+            {
+                var label = d.ToString("ddd dd.MM.", De);
+                void Progress(string text) => MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    var t = $"{label} · {text}";
+                    if (Steps.Count > 0 && Steps[^1].Text == t) return;
+                    if (Steps.Count > 0) Steps[^1].Done = true;
+                    Steps.Add(new StepVM { Text = t });
+                    while (Steps.Count > 7) Steps.RemoveAt(0);
+                });
+                var (plan, _) = await PlanDayAsync(d, hours, useAi, manual, Progress, _cts.Token);
+                var entry = _data.Day(d);
+                entry.LastSuggestions = [.. manual, .. plan.Bookings];
+                entry.LastSummary = plan.Summary;
+                entry.Questions = plan.Questions;
+                questions += plan.Questions.Count;
+                await _data.Days.SaveAsync();
+                if (Days.FirstOrDefault(c => c.Date == d) is { } cell) cell.HasDraft = entry.LastSuggestions.Count > 0;
+                done++;
+            }
+            if (Steps.Count > 0) Steps[^1].Done = true;
+            _toast.Success($"Vorschläge für {done} Tag(e) erstellt",
+                (questions > 0 ? $"{questions} Rückfrage(n) offen – an den Tagen mit Punkt prüfen. " : "") + "Danach mit „Woche buchen“ alles auf einmal buchen.");
+        }
+        catch (OperationCanceledException) { _toast.Show("Abgebrochen", $"{done} von {todo.Count} Tagen vorgeschlagen.", NoticeLevel.Warning); }
+        catch (Exception e) { Error = e.Message; }
+        finally
+        {
+            IsWorking = false;
+            if (Selected != null) SelectDay(Selected);   // Panel des gewählten Tags mit den neuen Vorschlägen füllen
+        }
+    }
+
+    /// <summary>Alle offenen Vorschläge der Woche auf einmal buchen.</summary>
+    [RelayCommand]
+    private async Task BookWeekAsync()
+    {
+        if (Selected == null || IsWorking || IsBooking) return;
+        var days = WeekDaysOf(Selected.Date);
+        var perDay = days.Select(d => (Day: d, Items: (_data.PeekDay(d)?.LastSuggestions ?? [])
+                .Where(s => !s.Booked && s.Hours > 0 && (!string.IsNullOrWhiteSpace(s.IssueKey) || _time.LocalMode)).ToList()))
+            .Where(x => x.Items.Count > 0).ToList();
+        if (perDay.Count == 0) { _toast.Show("Nichts zu buchen", "In dieser Woche gibt es keine offenen Vorschläge mit Ticket. Erst „Woche vorschlagen“.", NoticeLevel.Info); return; }
+        var withoutTicket = days.Sum(d => (_data.PeekDay(d)?.LastSuggestions ?? []).Count(s => !s.Booked && s.Hours > 0 && string.IsNullOrWhiteSpace(s.IssueKey)));
+
+        // Fehlende Accounts einmal pro Ticket/Projekt erfragen
+        if (_time.AccountRequired)
+            foreach (var s in perDay.SelectMany(x => x.Items).Where(s => string.IsNullOrWhiteSpace(s.Account)).ToList())
+            {
+                if (!string.IsNullOrWhiteSpace(s.Account)) continue;
+                var acc = await AskAccountAsync(new SuggestionVM(s, true));
+                if (acc == null) { _toast.Show("Buchung abgebrochen", $"Für {s.IssueKey} ist kein Account hinterlegt.", NoticeLevel.Warning); return; }
+                foreach (var o in perDay.SelectMany(x => x.Items).Where(o => string.IsNullOrWhiteSpace(o.Account) &&
+                             (o.IssueKey == s.IssueKey || (RememberForProject && TimeBookingService.ProjectKey(o.IssueKey) == TimeBookingService.ProjectKey(s.IssueKey)))))
+                    o.Account = acc;
+                s.Account = acc;
+            }
+
+        var lines = string.Join("\n", perDay.Select(x => $"{x.Day.ToString("ddd dd.MM.", De)}: {x.Items.Count} Buchung(en), {x.Items.Sum(i => i.Hours):0.##}h"));
+        var total = perDay.Sum(x => x.Items.Sum(i => i.Hours));
+        if (!await Dialogs.Confirm($"Woche buchen ({WeekTitle})", $"{lines}\n\nInsgesamt {total:0.##}h {(_time.LocalMode ? "intern speichern (ohne Jira)" : "in Jira eintragen")}?" +
+                (withoutTicket > 0 ? $"\n\n{withoutTicket} Block/Blöcke ohne Ticket werden nicht gebucht." : ""), "Buchen")) return;
+
+        IsBooking = true;
+        int ok = 0, failed = 0; double hoursOk = 0;
+        var errors = new List<string>();
+        try
+        {
+            foreach (var (d, items) in perDay)
+            {
+                var existing = await _time.GetWorklogsAsync(d, d);
+                var results = await _time.BookAsync(d, items, existing, _ => { });
+                foreach (var (item, err) in results)
+                {
+                    if (err == null) { ok++; hoursOk += item.Hours; }
+                    else { failed++; errors.Add($"{d:dd.MM.} {item.IssueKey}: {err}"); }
+                }
+                await _data.Days.SaveAsync();
+                if (Days.FirstOrDefault(c => c.Date == d) is { } cell) cell.HasDraft = (_data.PeekDay(d)?.LastSuggestions ?? []).Any(s => !s.Booked);
+            }
+            if (ok > 0) { Celebrate?.Invoke(); _toast.Success($"{ok} Buchung(en) in der Woche gespeichert", $"{hoursOk:0.##}h · {WeekTitle}"); }
+            if (failed > 0) _toast.Show($"{failed} Buchung(en) fehlgeschlagen", string.Join("\n", errors.Take(8)), NoticeLevel.Error);
+        }
+        catch (Exception e) { _toast.Error(e, "Wochenbuchung fehlgeschlagen"); }
+        finally
+        {
+            IsBooking = false;
+            await LoadMonthAsync(Selected?.Date);
+            _ = _shell.RefreshHoursAsync();
+        }
+    }
 
     [RelayCommand]
     private void RemoveSuggestion(SuggestionVM s)
@@ -571,22 +750,41 @@ public partial class TimeViewModel : ObservableObject, IActivatable
         _ = _data.Days.SaveAsync();
     }
 
+    /// <summary>Eigene Buchung anlegen – bleibt beim Vorschlagen erhalten und wird von der KI als eingeplant berücksichtigt.</summary>
     [RelayCommand]
     private async Task AddSuggestionAsync()
     {
         if (Selected == null) return;
-        var key = await Dialogs.Prompt("Buchung hinzufügen", "Ticket-Key (z.B. ABC-123)");
+        var day = Selected.Date;
+        var key = await Dialogs.Prompt("Eigene Buchung", _time.LocalMode ? "Ticket-Key (z. B. ABC-123) oder Thema" : "Ticket-Key (z. B. ABC-123)");
         if (string.IsNullOrWhiteSpace(key)) return;
-        var s = new BookingSuggestion { IssueKey = key.Trim().ToUpperInvariant(), Hours = 1, Comment = "", Confidence = 1 };
-        if (_hub.Jira != null)
+        key = key.Trim();
+        var isKey = TimeBookingService.IssueKeyRegex().IsMatch(key.ToUpperInvariant());
+        if (!isKey && !_time.LocalMode) { _toast.Show("Ungültiger Ticket-Key", key, NoticeLevel.Warning); return; }
+        var planned = Suggestions.Where(s => !s.Booked).Sum(s => s.Model.Hours);
+        var rest = Math.Max(0, (ParseHours(HoursToBook) ?? Selected.Missing) - planned);
+        var hoursText = await Dialogs.Prompt("Eigene Buchung", "Stunden", rest > 0 ? rest.ToString("0.##", De) : "1");
+        if (ParseHours(hoursText) is not { } h || h <= 0) return;
+        var comment = await Dialogs.Prompt("Eigene Buchung", "Buchungstext (optional)", "") ?? "";
+        var s = new BookingSuggestion
+        {
+            IssueKey = isKey ? key.ToUpperInvariant() : "", Topic = isKey ? null : key, Hours = h, Comment = comment.Trim(),
+            Confidence = 1, Manual = true, Reason = "Eigene Buchung",
+        };
+        if (isKey && _hub.Jira != null)
         {
             var issue = await _hub.Jira.GetIssueAsync(s.IssueKey);
             if (issue == null) { _toast.Show("Ticket nicht gefunden", s.IssueKey, NoticeLevel.Warning); return; }
             s.IssueSummary = issue.Summary;
+            if (string.IsNullOrWhiteSpace(s.Comment)) s.Comment = issue.Summary;
             await _time.ResolveAccountsAsync([s], [issue], _ => { });
         }
-        _data.Day(Selected.Date).LastSuggestions.Add(s);
+        _data.Day(day).LastSuggestions.Add(s);
+        await _data.Days.SaveAsync();
+        if (Selected?.Date != day) return;
         AddSuggestionVm(s);
+        Selected.HasDraft = true;
+        UpdateTotal();
     }
 
     [RelayCommand]
@@ -788,10 +986,121 @@ public partial class TimeViewModel : ObservableObject, IActivatable
 
     private void LoadMemory()
     {
+        var q = (MemorySearch ?? "").Trim();
+        bool Hit(params string?[] s) => q.Length == 0 || s.Any(x => x?.Contains(q, StringComparison.OrdinalIgnoreCase) == true);
+
         Topics.Clear();
-        foreach (var t in _data.TimeMemory.Value.Topics.OrderByDescending(t => t.Manual).ThenByDescending(t => t.Hits)) Topics.Add(t);
+        foreach (var t in _data.TimeMemory.Value.Topics.OrderByDescending(t => t.Manual).ThenByDescending(t => t.Hits).Where(t => Hit(t.Topic, t.Repo, t.Ticket))) Topics.Add(t);
         Facts.Clear();
-        foreach (var f in _data.TimeMemory.Value.Facts.AsEnumerable().Reverse()) Facts.Add(f);
+        foreach (var f in _data.TimeMemory.Value.Facts.AsEnumerable().Reverse().Where(f => Hit(f.Question, f.Answer))) Facts.Add(f);
+
+        var acc = _data.Accounts.Value;
+        AccountRows.Clear();
+        foreach (var (k, v) in acc.ProjectAccounts.OrderBy(x => x.Key).Where(x => Hit(x.Key, x.Value)))
+            AccountRows.Add(new MemoryRow("project", k, v, $"Jira-Projekt {k}", "gilt für alle Tickets des Projekts ohne eigenen Account"));
+        foreach (var (k, v) in acc.IssueAccounts.OrderBy(x => x.Key).Where(x => Hit(x.Key, x.Value)))
+            AccountRows.Add(new MemoryRow("issue", k, v, k, "Ticket"));
+
+        AssignmentRows.Clear();
+        var projects = _data.Projects.Value;
+        foreach (var (k, pid) in projects.TicketAssignments.OrderBy(x => x.Key))
+        {
+            var p = projects.Projects.FirstOrDefault(x => x.Id == pid);
+            if (Hit(k, p?.Name, p?.EpicKey)) AssignmentRows.Add(new MemoryRow("assign", k, pid, k, p == null ? "Projekt gelöscht" : $"{p.Name} · Epic {p.EpicKey}"));
+        }
+        OnPropertyChanged(nameof(HasAccountRows)); OnPropertyChanged(nameof(HasAssignmentRows));
+    }
+
+    public bool HasAccountRows => AccountRows.Count > 0;
+    public bool HasAssignmentRows => AssignmentRows.Count > 0;
+
+    /// <summary>Gemerkten Account ändern (Ticket oder Jira-Projekt).</summary>
+    [RelayCommand]
+    private async Task EditMemoryAsync(MemoryRow r)
+    {
+        if (r.Kind == "assign") { await ReassignTicketAsync(r); return; }
+        var v = await Dialogs.Prompt(r.Kind == "project" ? $"Account für Jira-Projekt {r.Key}" : $"Account für {r.Key}", "Account (Key, z. B. ACC-12) – leer lassen zum Entfernen", r.Value);
+        if (v == null) return;
+        var map = r.Kind == "project" ? _data.Accounts.Value.ProjectAccounts : _data.Accounts.Value.IssueAccounts;
+        if (string.IsNullOrWhiteSpace(v)) map.Remove(r.Key);
+        else
+        {
+            map[r.Key] = v.Trim();
+            if (!_data.Accounts.Value.KnownAccounts.Contains(v.Trim())) _data.Accounts.Value.KnownAccounts.Insert(0, v.Trim());
+        }
+        await _data.Accounts.SaveAsync();
+        LoadMemory();
+    }
+
+    [RelayCommand]
+    private async Task DeleteMemoryAsync(MemoryRow r)
+    {
+        switch (r.Kind)
+        {
+            case "project": _data.Accounts.Value.ProjectAccounts.Remove(r.Key); await _data.Accounts.SaveAsync(); break;
+            case "issue": _data.Accounts.Value.IssueAccounts.Remove(r.Key); await _data.Accounts.SaveAsync(); break;
+            case "assign": _data.Projects.Value.TicketAssignments.Remove(r.Key); await _data.Projects.SaveAsync(); break;
+        }
+        LoadMemory();
+    }
+
+    /// <summary>Account fürs Ticket oder fürs ganze Jira-Projekt neu hinterlegen.</summary>
+    [RelayCommand]
+    private async Task AddAccountMemoryAsync()
+    {
+        var key = await Dialogs.Prompt("Account merken", "Ticket (z. B. ABC-12) oder Jira-Projekt (z. B. ABC)");
+        if (string.IsNullOrWhiteSpace(key)) return;
+        key = key.Trim().ToUpperInvariant();
+        var isIssue = TimeBookingService.IssueKeyRegex().IsMatch(key);
+        var acc = await Dialogs.Prompt("Account merken", isIssue ? $"Account für Ticket {key}" : $"Account für alle Tickets im Jira-Projekt {key}");
+        if (string.IsNullOrWhiteSpace(acc)) return;
+        if (isIssue) await _time.RememberAccountAsync(key, acc.Trim(), false);
+        else
+        {
+            _data.Accounts.Value.ProjectAccounts[key] = acc.Trim();
+            if (!_data.Accounts.Value.KnownAccounts.Contains(acc.Trim())) _data.Accounts.Value.KnownAccounts.Insert(0, acc.Trim());
+            await _data.Accounts.SaveAsync();
+        }
+        LoadMemory();
+    }
+
+    /// <summary>Ticket einem anderen Copit-Projekt zuordnen (geteiltes Epic).</summary>
+    private async Task ReassignTicketAsync(MemoryRow r)
+    {
+        var projects = _data.Projects.Value.Projects.Where(p => !string.IsNullOrWhiteSpace(p.EpicKey)).ToList();
+        var current = projects.FirstOrDefault(p => p.Id == r.Value);
+        var siblings = current != null ? TicketScope.Siblings(projects, current) : projects;
+        var options = siblings.Select(p => p.Name).Append("Zuordnung entfernen").ToArray();
+        var pick = await Dialogs.Choose($"{r.Key} zuordnen", options);
+        if (pick == null || pick == "Abbrechen") return;
+        if (pick == "Zuordnung entfernen") _data.Projects.Value.TicketAssignments.Remove(r.Key);
+        else _data.Projects.Value.TicketAssignments[r.Key] = siblings.First(p => p.Name == pick).Id;
+        await _data.Projects.SaveAsync();
+        LoadMemory();
+    }
+
+    /// <summary>Gelernte Zuordnung Thema/Repo → Ticket ändern.</summary>
+    [RelayCommand]
+    private async Task EditTopicAsync(TopicMapping t)
+    {
+        var topic = await Dialogs.Prompt("Zuordnung bearbeiten", "Thema", t.Topic);
+        if (topic == null) return;
+        var ticket = await Dialogs.Prompt("Zuordnung bearbeiten", $"Ticket für \"{topic}\"", t.Ticket);
+        if (string.IsNullOrWhiteSpace(ticket)) return;
+        t.Topic = topic.Trim(); t.Ticket = ticket.Trim().ToUpperInvariant(); t.Manual = true; t.LastUsed = DateTime.Now;
+        await _data.TimeMemory.SaveAsync();
+        LoadMemory();
+    }
+
+    /// <summary>Gelerntes Wissen (Antwort auf eine Rückfrage) ändern.</summary>
+    [RelayCommand]
+    private async Task EditFactAsync(TimeFact f)
+    {
+        var a = await Dialogs.Prompt("Wissen bearbeiten", f.Question, f.Answer);
+        if (a == null) return;
+        if (string.IsNullOrWhiteSpace(a)) _data.TimeMemory.Value.Facts.Remove(f); else f.Answer = a.Trim();
+        await _data.TimeMemory.SaveAsync();
+        LoadMemory();
     }
 
     [RelayCommand]
@@ -823,7 +1132,7 @@ public partial class TimeViewModel : ObservableObject, IActivatable
     }
 
     // --------------- Regeln ---------------
-    [RelayCommand] private void ToggleRules() => ShowRules = !ShowRules;
+    [RelayCommand] private void ToggleRules() { ShowRules = !ShowRules; if (ShowRules) LoadMemory(); }
 
     [RelayCommand]
     private void AddRule()

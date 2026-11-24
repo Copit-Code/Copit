@@ -184,6 +184,8 @@ public class BookingSuggestion
     /// <summary>Kurzes Thema (2–4 Wörter) – Schlüssel fürs Themen-Gedächtnis.</summary>
     public string? Topic { get; set; }
     public string? Repo { get; set; }
+    /// <summary>Vom Nutzer selbst angelegt – bleibt beim erneuten Vorschlagen erhalten und zählt als eingeplant.</summary>
+    public bool Manual { get; set; }
 }
 
 public class AccountMemory
