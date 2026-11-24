@@ -122,6 +122,7 @@ public static class MauiProgram
         s.AddSingleton<CustomizeView>();
         s.AddSingleton<DocsView>();
         s.AddSingleton<ChangesView>();
+        s.AddSingleton<KnowledgeView>();
         s.AddSingleton<ExtensionsView>();
 
         return builder.Build();
